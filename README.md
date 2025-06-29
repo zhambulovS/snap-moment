@@ -30,13 +30,7 @@
 ## ⚙️ Установка проекта
 
 ```bash
-git clone https://github.com/yourusername/weddingsnap.git
-cd weddingsnap
-
-# Backend
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
+git clone https://github.com/zhambulovS/snap-moment.git
 
 # Frontend
 cd ../frontend
