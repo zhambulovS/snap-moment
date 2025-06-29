@@ -21,7 +21,7 @@
 
 1. Молодожёны регистрируются на сайте.
 2. Создают альбом "Свадьба Айнуры и Бекжана".
-3. Получают ссылку `https://weddingsnap.com/aibek2025`
+3. Получают ссылку типо `https://snap-moment.com/aibek2025`
 4. Гости открывают ссылку со своих телефонов и загружают фото.
 5. Все фото сразу попадают в один общий альбом.
 
@@ -32,7 +32,3 @@
 ```bash
 git clone https://github.com/zhambulovS/snap-moment.git
 
-# Frontend
-cd ../frontend
-npm install
-npm run dev
