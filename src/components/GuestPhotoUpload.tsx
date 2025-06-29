@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Camera, Upload, Heart, AlertCircle, CheckCircle } from 'lucide-react';
+import { Camera, Upload, Heart, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceId } from '@/utils/deviceId';
@@ -15,12 +16,9 @@ interface Album {
   wedding_date: string;
 }
 
-interface GuestPhotoUploadProps {
-  albumCode: string;
-  onBack: () => void;
-}
-
-const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
+const GuestPhotoUpload = () => {
+  const { albumCode } = useParams<{ albumCode: string }>();
+  const navigate = useNavigate();
   const [album, setAlbum] = useState<Album | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadCount, setUploadCount] = useState(0);
@@ -29,11 +27,20 @@ const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
   const deviceId = getDeviceId();
 
   useEffect(() => {
-    loadAlbumData();
+    if (albumCode) {
+      loadAlbumData();
+    }
   }, [albumCode]);
 
   const loadAlbumData = async () => {
+    if (!albumCode) {
+      navigate('/');
+      return;
+    }
+
     try {
+      console.log('Loading album with code:', albumCode);
+      
       // Загружаем данные альбома
       const { data: albumData, error: albumError } = await supabase
         .from('albums')
@@ -43,15 +50,17 @@ const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
         .single();
 
       if (albumError || !albumData) {
+        console.error('Album error:', albumError);
         toast({
           title: "Альбом не найден",
           description: "Проверьте правильность ссылки",
           variant: "destructive"
         });
-        onBack();
+        navigate('/');
         return;
       }
 
+      console.log('Album loaded:', albumData);
       setAlbum(albumData);
 
       // Проверяем количество уже загруженных фото с этого устройства
@@ -62,6 +71,7 @@ const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
         .eq('device_id', deviceId)
         .single();
 
+      console.log('Upload limits:', limitData);
       setUploadCount(limitData?.upload_count || 0);
       setLoading(false);
     } catch (error) {
@@ -71,7 +81,7 @@ const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
         description: "Не удалось загрузить данные альбома",
         variant: "destructive"
       });
-      onBack();
+      navigate('/');
     }
   };
 
@@ -93,7 +103,11 @@ const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
     setUploading(true);
 
     try {
+      let successCount = 0;
+      
       for (const file of filesToUpload) {
+        console.log('Uploading file:', file.name, 'Size:', file.size);
+        
         // Проверяем размер файла (максимум 10MB)
         if (file.size > 10 * 1024 * 1024) {
           toast({
@@ -107,6 +121,8 @@ const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
         // Создаем уникальное имя файла
         const fileExt = file.name.split('.').pop();
         const fileName = `${album.id}/${deviceId}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+
+        console.log('Uploading to storage with filename:', fileName);
 
         // Загружаем файл в storage
         const { error: uploadError } = await supabase.storage
@@ -122,6 +138,8 @@ const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
           });
           continue;
         }
+
+        console.log('File uploaded to storage, saving to database');
 
         // Сохраняем информацию о фото в базе данных
         const { error: dbError } = await supabase
@@ -140,24 +158,30 @@ const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
           continue;
         }
 
+        console.log('Photo saved to database');
+
         // Обновляем счетчик загрузок
+        const newUploadCount = uploadCount + successCount + 1;
         const { error: limitError } = await supabase
           .from('upload_limits')
           .upsert({
             album_id: album.id,
             device_id: deviceId,
-            upload_count: uploadCount + 1
+            upload_count: newUploadCount
           });
 
         if (!limitError) {
-          setUploadCount(prev => prev + 1);
+          successCount++;
         }
       }
 
-      toast({
-        title: "Фото загружены! 🎉",
-        description: `Успешно загружено ${filesToUpload.length} фото`,
-      });
+      if (successCount > 0) {
+        setUploadCount(prev => prev + successCount);
+        toast({
+          title: "Фото загружены! 🎉",
+          description: `Успешно загружено ${successCount} фото`,
+        });
+      }
 
     } catch (error) {
       console.error('Error uploading photos:', error);
@@ -196,10 +220,11 @@ const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
       <div className="container mx-auto px-4 max-w-2xl">
         <Button 
           variant="ghost" 
-          onClick={onBack}
+          onClick={() => navigate('/')}
           className="mb-6 text-rose-600 hover:text-rose-700"
         >
-          ← Назад
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Назад
         </Button>
 
         <Card className="bg-white/70 backdrop-blur-sm border-rose-200 mb-6">

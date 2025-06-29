@@ -5,14 +5,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Camera, Heart, Users, Upload, Download, LogOut } from 'lucide-react';
+import { Camera, Heart, Users, Upload, Download, LogOut, Copy } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import AuthPage from '@/components/AuthPage';
-import GuestPhotoUpload from '@/components/GuestPhotoUpload';
 import AlbumGallery from '@/components/AlbumGallery';
 import { supabase } from '@/integrations/supabase/client';
 import { generateAlbumCode } from '@/utils/albumCode';
+import { useNavigate } from 'react-router-dom';
 
 interface Album {
   id: string;
@@ -27,12 +27,12 @@ interface Album {
 
 const Index = () => {
   const { user, loading: authLoading, signOut } = useAuth();
-  const [currentView, setCurrentView] = useState<'home' | 'create' | 'album' | 'guest'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'create' | 'album'>('home');
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
-  const [guestAlbumCode, setGuestAlbumCode] = useState<string>('');
   const [userAlbums, setUserAlbums] = useState<Album[]>([]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   React.useEffect(() => {
     if (user && currentView === 'home') {
@@ -127,8 +127,8 @@ const Index = () => {
       return;
     }
 
-    setGuestAlbumCode(albumCode.trim().toUpperCase());
-    setCurrentView('guest');
+    // Перенаправляем на страницу гостя
+    navigate(`/guest/${albumCode.trim().toUpperCase()}`);
   };
 
   const handleLogout = async () => {
@@ -150,7 +150,7 @@ const Index = () => {
     );
   }
 
-  if (!user && currentView !== 'guest') {
+  if (!user) {
     return <AuthPage />;
   }
 
@@ -160,10 +160,6 @@ const Index = () => {
 
   if (currentView === 'album' && selectedAlbum) {
     return <AlbumGallery album={selectedAlbum} onBack={() => setCurrentView('home')} />;
-  }
-
-  if (currentView === 'guest') {
-    return <GuestPhotoUpload albumCode={guestAlbumCode} onBack={() => setCurrentView('home')} />;
   }
 
   return (
@@ -181,132 +177,38 @@ const Index = () => {
               <Heart className="h-6 w-6 text-pink-500 animate-pulse" />
             </div>
             
-            {user && (
-              <div className="flex items-center space-x-4">
-                <span className="text-gray-600">Привет, {user.email}!</span>
-                <Button
-                  onClick={handleLogout}
-                  variant="ghost"
-                  size="sm"
-                  className="text-rose-600 hover:text-rose-700"
-                >
-                  <LogOut className="h-4 w-4 mr-1" />
-                  Выйти
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center space-x-4">
+              <span className="text-gray-600">Привет, {user.email}!</span>
+              <Button
+                onClick={handleLogout}
+                variant="ghost"
+                size="sm"
+                className="text-rose-600 hover:text-rose-700"
+              >
+                <LogOut className="h-4 w-4 mr-1" />
+                Выйти
+              </Button>
+            </div>
           </div>
           
-          {user && (
-            <p className="text-center text-lg text-gray-600 max-w-2xl mx-auto mt-4">
-              Создавайте альбомы и собирайте фотографии со своих праздников
-            </p>
-          )}
+          <p className="text-center text-lg text-gray-600 max-w-2xl mx-auto mt-4">
+            Создавайте альбомы и собирайте фотографии со своих праздников
+          </p>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-12">
-        {user ? (
-          // Авторизованный пользователь - показываем личный кабинет
-          <UserDashboard 
-            userAlbums={userAlbums}
-            loading={loading}
-            onCreateAlbum={() => setCurrentView('create')}
-            onViewAlbum={(album) => {
-              setSelectedAlbum(album);
-              setCurrentView('album');
-            }}
-          />
-        ) : (
-          // Неавторизованный пользователь - показываем главную страницу
-          <>
-            {/* Hero Section */}
-            <div className="text-center mb-16">
-              <div className="inline-flex items-center space-x-8 mb-8">
-                <GuestAccessForm onAccess={handleGuestAccess} />
-              </div>
-              <p className="text-gray-600 mb-8">
-                Есть код альбома? Введите его выше для загрузки фото
-              </p>
-            </div>
-
-            {/* Features */}
-            <div className="grid md:grid-cols-3 gap-8 mb-16">
-              <Card className="border-rose-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105 bg-white/70 backdrop-blur-sm">
-                <CardHeader className="text-center">
-                  <div className="mx-auto w-16 h-16 bg-gradient-to-br from-rose-100 to-pink-100 rounded-full flex items-center justify-center mb-4">
-                    <Users className="h-8 w-8 text-rose-500" />
-                  </div>
-                  <CardTitle className="text-rose-700">Для гостей</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-gray-600 text-center">
-                    Гости загружают фото прямо из браузера без регистрации и установки приложений
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="border-rose-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105 bg-white/70 backdrop-blur-sm">
-                <CardHeader className="text-center">
-                  <div className="mx-auto w-16 h-16 bg-gradient-to-br from-rose-100 to-pink-100 rounded-full flex items-center justify-center mb-4">
-                    <Upload className="h-8 w-8 text-rose-500" />
-                  </div>
-                  <CardTitle className="text-rose-700">Простая загрузка</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-gray-600 text-center">
-                    Интуитивный интерфейс позволяет быстро загружать фото с любого устройства
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="border-rose-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105 bg-white/70 backdrop-blur-sm">
-                <CardHeader className="text-center">
-                  <div className="mx-auto w-16 h-16 bg-gradient-to-br from-rose-100 to-pink-100 rounded-full flex items-center justify-center mb-4">
-                    <Download className="h-8 w-8 text-rose-500" />
-                  </div>
-                  <CardTitle className="text-rose-700">Все в одном месте</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-gray-600 text-center">
-                    Все фотографии автоматически собираются в вашем альбоме для удобного просмотра
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* How it works */}
-            <div className="text-center">
-              <h2 className="text-3xl font-bold text-gray-800 mb-8">Как это работает?</h2>
-              <div className="grid md:grid-cols-3 gap-8">
-                <div className="space-y-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto">
-                    1
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-700">Зарегистрируйтесь</h3>
-                  <p className="text-gray-600">Создайте аккаунт и получите доступ к созданию альбомов</p>
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto">
-                    2
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-700">Создайте альбом</h3>
-                  <p className="text-gray-600">Укажите детали свадьбы и получите уникальный код альбома</p>
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto">
-                    3
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-700">Поделитесь кодом</h3>
-                  <p className="text-gray-600">Гости используют код для загрузки фото прямо в ваш альбом</p>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
+        <UserDashboard 
+          userAlbums={userAlbums}
+          loading={loading}
+          onCreateAlbum={() => setCurrentView('create')}
+          onViewAlbum={(album) => {
+            setSelectedAlbum(album);
+            setCurrentView('album');
+          }}
+          onGuestAccess={handleGuestAccess}
+        />
       </main>
 
       {/* Footer */}
@@ -438,53 +340,36 @@ const CreateAlbumForm = ({ onSubmit, onBack, loading }: { onSubmit: (data: any) 
   );
 };
 
-const GuestAccessForm = ({ onAccess }: { onAccess: (albumCode: string) => void }) => {
-  const [albumCode, setAlbumCode] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (albumCode.trim()) {
-      onAccess(albumCode.trim().toUpperCase());
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="flex items-center space-x-2">
-      <Input
-        placeholder="Введите код альбома"
-        value={albumCode}
-        onChange={(e) => setAlbumCode(e.target.value)}
-        className="border-rose-200 focus:border-rose-400"
-      />
-      <Button 
-        type="submit"
-        className="bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
-      >
-        Войти как гость
-      </Button>
-    </form>
-  );
-};
-
 const UserDashboard = ({ 
   userAlbums, 
   loading, 
   onCreateAlbum, 
-  onViewAlbum 
+  onViewAlbum,
+  onGuestAccess
 }: { 
   userAlbums: Album[];
   loading: boolean;
   onCreateAlbum: () => void;
   onViewAlbum: (album: Album) => void;
+  onGuestAccess: (code: string) => void;
 }) => {
   const { toast } = useToast();
+  const [guestCode, setGuestCode] = useState('');
 
-  const copyAlbumCode = (albumCode: string) => {
-    navigator.clipboard.writeText(albumCode);
+  const copyAlbumLink = (albumCode: string) => {
+    const link = `${window.location.origin}/guest/${albumCode}`;
+    navigator.clipboard.writeText(link);
     toast({
-      title: "Код скопирован!",
-      description: "Поделитесь этим кодом с гостями",
+      title: "Ссылка скопирована!",
+      description: "Поделитесь этой ссылкой с гостями",
     });
+  };
+
+  const handleGuestSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (guestCode.trim()) {
+      onGuestAccess(guestCode.trim());
+    }
   };
 
   if (loading) {
@@ -498,6 +383,35 @@ const UserDashboard = ({
 
   return (
     <div>
+      {/* Гостевой доступ */}
+      <Card className="bg-white/70 backdrop-blur-sm border-rose-200 mb-8">
+        <CardHeader>
+          <CardTitle className="text-center text-rose-700">
+            <Users className="inline mr-2 h-6 w-6" />
+            Гостевой доступ
+          </CardTitle>
+          <CardDescription className="text-center">
+            Есть код альбома? Введите его для загрузки фото
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleGuestSubmit} className="flex items-center space-x-2">
+            <Input
+              placeholder="Введите код альбома"
+              value={guestCode}
+              onChange={(e) => setGuestCode(e.target.value)}
+              className="border-rose-200 focus:border-rose-400"
+            />
+            <Button 
+              type="submit"
+              className="bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
+            >
+              Войти как гость
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-3xl font-bold text-gray-800">Мои альбомы</h2>
         <Button
@@ -547,14 +461,15 @@ const UserDashboard = ({
                 )}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>Код альбома:</span>
+                    <span>Ссылка для гостей:</span>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => copyAlbumCode(album.album_code)}
+                      onClick={() => copyAlbumLink(album.album_code)}
                       className="text-rose-600 hover:text-rose-700 p-1 h-auto"
                     >
-                      {album.album_code}
+                      <Copy className="h-4 w-4 mr-1" />
+                      Копировать
                     </Button>
                   </div>
                   <Button
