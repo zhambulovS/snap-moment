@@ -1,89 +1,195 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Camera, Upload, Heart, Check } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Camera, Upload, Heart, AlertCircle, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { getDeviceId } from '@/utils/deviceId';
+
+interface Album {
+  id: string;
+  bride_name: string;
+  groom_name: string;
+  photo_limit: number;
+  wedding_date: string;
+}
 
 interface GuestPhotoUploadProps {
-  album: any;
-  albumId: string;
+  albumCode: string;
   onBack: () => void;
 }
 
-const GuestPhotoUpload = ({ album, albumId, onBack }: GuestPhotoUploadProps) => {
-  const [uploadedPhotos, setUploadedPhotos] = useState<File[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+const GuestPhotoUpload = ({ albumCode, onBack }: GuestPhotoUploadProps) => {
+  const [album, setAlbum] = useState<Album | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadCount, setUploadCount] = useState(0);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const deviceId = getDeviceId();
 
-  // Simulate device ID for demo
-  const deviceId = localStorage.getItem('deviceId') || Math.random().toString(36).substring(2, 15);
-  if (!localStorage.getItem('deviceId')) {
-    localStorage.setItem('deviceId', deviceId);
-  }
+  useEffect(() => {
+    loadAlbumData();
+  }, [albumCode]);
 
-  // Get current upload count for this device
-  const currentUploads = parseInt(localStorage.getItem(`uploads_${albumId}_${deviceId}`) || '0');
-  const remainingUploads = Math.max(0, album.photoLimit - currentUploads);
+  const loadAlbumData = async () => {
+    try {
+      // Загружаем данные альбома
+      const { data: albumData, error: albumError } = await supabase
+        .from('albums')
+        .select('*')
+        .eq('album_code', albumCode)
+        .eq('is_active', true)
+        .single();
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    const validFiles = files.filter(file => file.type.startsWith('image/'));
-    
-    if (validFiles.length + currentUploads > album.photoLimit) {
+      if (albumError || !albumData) {
+        toast({
+          title: "Альбом не найден",
+          description: "Проверьте правильность ссылки",
+          variant: "destructive"
+        });
+        onBack();
+        return;
+      }
+
+      setAlbum(albumData);
+
+      // Проверяем количество уже загруженных фото с этого устройства
+      const { data: limitData } = await supabase
+        .from('upload_limits')
+        .select('upload_count')
+        .eq('album_id', albumData.id)
+        .eq('device_id', deviceId)
+        .single();
+
+      setUploadCount(limitData?.upload_count || 0);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading album:', error);
       toast({
-        title: "Превышен лимит",
-        description: `Вы можете загрузить ещё только ${remainingUploads} фото`,
+        title: "Ошибка",
+        description: "Не удалось загрузить данные альбома",
+        variant: "destructive"
+      });
+      onBack();
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0 || !album) return;
+
+    const remainingUploads = album.photo_limit - uploadCount;
+    if (remainingUploads <= 0) {
+      toast({
+        title: "Лимит достигнут",
+        description: "Вы уже загрузили максимальное количество фото",
         variant: "destructive"
       });
       return;
     }
 
-    setUploadedPhotos(validFiles);
-  };
+    const filesToUpload = files.slice(0, remainingUploads);
+    setUploading(true);
 
-  const handleUpload = async () => {
-    if (uploadedPhotos.length === 0) return;
+    try {
+      for (const file of filesToUpload) {
+        // Проверяем размер файла (максимум 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+          toast({
+            title: "Файл слишком большой",
+            description: `${file.name} превышает 10MB`,
+            variant: "destructive"
+          });
+          continue;
+        }
 
-    setIsUploading(true);
-    
-    // Simulate upload delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
+        // Создаем уникальное имя файла
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${album.id}/${deviceId}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
-    // Update album data
-    const storedAlbum = JSON.parse(localStorage.getItem(`album_${albumId}`) || '{}');
-    const newPhotos = uploadedPhotos.map(file => ({
-      id: Math.random().toString(36).substring(2, 15),
-      name: file.name,
-      size: file.size,
-      uploadedAt: new Date().toISOString(),
-      deviceId: deviceId,
-      url: URL.createObjectURL(file) // In real app, this would be a server URL
-    }));
+        // Загружаем файл в storage
+        const { error: uploadError } = await supabase.storage
+          .from('wedding-photos')
+          .upload(fileName, file);
 
-    storedAlbum.photos = [...(storedAlbum.photos || []), ...newPhotos];
-    localStorage.setItem(`album_${albumId}`, JSON.stringify(storedAlbum));
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          toast({
+            title: "Ошибка загрузки",
+            description: `Не удалось загрузить ${file.name}`,
+            variant: "destructive"
+          });
+          continue;
+        }
 
-    // Update upload count
-    const newCount = currentUploads + uploadedPhotos.length;
-    localStorage.setItem(`uploads_${albumId}_${deviceId}`, newCount.toString());
+        // Сохраняем информацию о фото в базе данных
+        const { error: dbError } = await supabase
+          .from('photos')
+          .insert({
+            album_id: album.id,
+            file_name: fileName,
+            file_size: file.size,
+            device_id: deviceId
+          });
 
-    setIsUploading(false);
-    setUploadedPhotos([]);
-    
-    toast({
-      title: "Фото загружены! 📸",
-      description: `Загружено ${uploadedPhotos.length} фото. Спасибо за участие!`,
-    });
+        if (dbError) {
+          console.error('Database error:', dbError);
+          // Удаляем файл из storage если не удалось сохранить в БД
+          await supabase.storage.from('wedding-photos').remove([fileName]);
+          continue;
+        }
 
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+        // Обновляем счетчик загрузок
+        const { error: limitError } = await supabase
+          .from('upload_limits')
+          .upsert({
+            album_id: album.id,
+            device_id: deviceId,
+            upload_count: uploadCount + 1
+          });
+
+        if (!limitError) {
+          setUploadCount(prev => prev + 1);
+        }
+      }
+
+      toast({
+        title: "Фото загружены! 🎉",
+        description: `Успешно загружено ${filesToUpload.length} фото`,
+      });
+
+    } catch (error) {
+      console.error('Error uploading photos:', error);
+      toast({
+        title: "Ошибка",
+        description: "Не удалось загрузить фото. Попробуйте снова.",
+        variant: "destructive"
+      });
     }
+
+    setUploading(false);
+    // Очищаем input
+    event.target.value = '';
   };
 
-  const canUploadMore = remainingUploads > 0;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-orange-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-rose-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Загрузка альбома...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!album) {
+    return null;
+  }
+
+  const remainingUploads = album.photo_limit - uploadCount;
+  const canUpload = remainingUploads > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-orange-50 py-8">
@@ -98,100 +204,111 @@ const GuestPhotoUpload = ({ album, albumId, onBack }: GuestPhotoUploadProps) => 
 
         <Card className="bg-white/70 backdrop-blur-sm border-rose-200 mb-6">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl text-rose-700 flex items-center justify-center">
-              <Heart className="mr-2 h-6 w-6 text-pink-500" />
-              Свадьба {album.brideName} и {album.groomName}
-            </CardTitle>
-            <CardDescription>
-              {album.description && <p className="mb-2">{album.description}</p>}
-              <p>Дата: {new Date(album.weddingDate).toLocaleDateString('ru-RU')}</p>
-            </CardDescription>
+            <div className="flex items-center justify-center space-x-2 mb-2">
+              <Heart className="h-6 w-6 text-rose-500" />
+              <CardTitle className="text-2xl text-rose-700">
+                {album.bride_name} & {album.groom_name}
+              </CardTitle>
+              <Heart className="h-6 w-6 text-rose-500" />
+            </div>
+            <p className="text-gray-600">
+              {new Date(album.wedding_date).toLocaleDateString('ru-RU')}
+            </p>
           </CardHeader>
         </Card>
 
         <Card className="bg-white/70 backdrop-blur-sm border-rose-200">
-          <CardHeader className="text-center">
-            <div className="mx-auto w-16 h-16 bg-gradient-to-br from-rose-100 to-pink-100 rounded-full flex items-center justify-center mb-4">
-              <Camera className="h-8 w-8 text-rose-500" />
-            </div>
-            <CardTitle className="text-xl text-rose-700">Загрузка фотографий</CardTitle>
-            <CardDescription>
-              {canUploadMore ? (
-                <>Вы можете загрузить ещё <strong>{remainingUploads}</strong> из {album.photoLimit} фото</>
-              ) : (
-                <span className="text-green-600 font-semibold">
-                  <Check className="inline w-4 h-4 mr-1" />
-                  Вы уже загрузили максимальное количество фото. Спасибо!
-                </span>
-              )}
-            </CardDescription>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Camera className="h-6 w-6 text-rose-500" />
+              <span>Загрузка фотографий</span>
+            </CardTitle>
           </CardHeader>
-          
-          {canUploadMore && (
-            <CardContent className="space-y-6">
-              <div className="border-2 border-dashed border-rose-200 rounded-lg p-8 text-center hover:border-rose-300 transition-colors">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  id="photo-upload"
-                />
-                <label htmlFor="photo-upload" className="cursor-pointer">
-                  <Upload className="mx-auto h-12 w-12 text-rose-400 mb-4" />
-                  <p className="text-lg font-medium text-gray-700 mb-2">
-                    Нажмите для выбора фото
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Или перетащите файлы сюда
-                  </p>
-                </label>
+          <CardContent className="space-y-6">
+            {/* Индикатор лимита */}
+            <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
+              <div className="flex items-center space-x-2 mb-2">
+                {canUpload ? (
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-500" />
+                )}
+                <span className="font-medium">
+                  Загружено: {uploadCount} из {album.photo_limit}
+                </span>
               </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-gradient-to-r from-rose-500 to-pink-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(uploadCount / album.photo_limit) * 100}%` }}
+                ></div>
+              </div>
+              {canUpload ? (
+                <p className="text-sm text-gray-600 mt-2">
+                  Вы можете загрузить ещё {remainingUploads} фото
+                </p>
+              ) : (
+                <p className="text-sm text-red-600 mt-2">
+                  Лимит загрузок достигнут. Спасибо за участие! ❤️
+                </p>
+              )}
+            </div>
 
-              {uploadedPhotos.length > 0 && (
-                <div className="space-y-4">
-                  <h3 className="font-medium text-gray-700">Выбранные фото ({uploadedPhotos.length}):</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {uploadedPhotos.map((file, index) => (
-                      <div key={index} className="relative">
-                        <img
-                          src={URL.createObjectURL(file)}
-                          alt={`Preview ${index + 1}`}
-                          className="w-full h-24 object-cover rounded-lg border border-rose-200"
-                        />
-                        <div className="absolute bottom-1 left-1 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                          {Math.round(file.size / 1024)}KB
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  
+            {/* Кнопки загрузки */}
+            {canUpload && (
+              <div className="space-y-4">
+                <div>
+                  <input
+                    type="file"
+                    id="camera-upload"
+                    accept="image/*"
+                    capture="environment"
+                    multiple
+                    onChange={handleFileUpload}
+                    disabled={uploading}
+                    className="hidden"
+                  />
                   <Button
-                    onClick={handleUpload}
-                    disabled={isUploading}
+                    onClick={() => document.getElementById('camera-upload')?.click()}
+                    disabled={uploading}
                     className="w-full bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
                     size="lg"
                   >
-                    {isUploading ? (
-                      <>Загружаем... ⏳</>
-                    ) : (
-                      <>
-                        <Upload className="mr-2 h-5 w-5" />
-                        Загрузить {uploadedPhotos.length} фото
-                      </>
-                    )}
+                    <Camera className="mr-2 h-5 w-5" />
+                    {uploading ? 'Загрузка...' : 'Сделать фото'}
                   </Button>
                 </div>
-              )}
-            </CardContent>
-          )}
-        </Card>
 
-        <div className="text-center mt-6 text-sm text-gray-600">
-          💕 Спасибо, что делитесь особенными моментами!
-        </div>
+                <div>
+                  <input
+                    type="file"
+                    id="gallery-upload"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFileUpload}
+                    disabled={uploading}
+                    className="hidden"
+                  />
+                  <Button
+                    onClick={() => document.getElementById('gallery-upload')?.click()}
+                    disabled={uploading}
+                    variant="outline"
+                    className="w-full border-rose-200 text-rose-600 hover:bg-rose-50"
+                    size="lg"
+                  >
+                    <Upload className="mr-2 h-5 w-5" />
+                    {uploading ? 'Загрузка...' : 'Выбрать из галереи'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="text-center text-sm text-gray-500">
+              <p>Поддерживаются изображения до 10MB</p>
+              <p>JPG, PNG, HEIC, WEBP</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

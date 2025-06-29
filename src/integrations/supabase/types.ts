@@ -9,7 +9,141 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      albums: {
+        Row: {
+          album_code: string
+          bride_name: string
+          created_at: string
+          description: string | null
+          groom_name: string
+          id: string
+          is_active: boolean
+          photo_limit: number
+          user_id: string
+          wedding_date: string
+        }
+        Insert: {
+          album_code: string
+          bride_name: string
+          created_at?: string
+          description?: string | null
+          groom_name: string
+          id?: string
+          is_active?: boolean
+          photo_limit?: number
+          user_id: string
+          wedding_date: string
+        }
+        Update: {
+          album_code?: string
+          bride_name?: string
+          created_at?: string
+          description?: string | null
+          groom_name?: string
+          id?: string
+          is_active?: boolean
+          photo_limit?: number
+          user_id?: string
+          wedding_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "albums_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      photos: {
+        Row: {
+          album_id: string
+          device_id: string
+          file_name: string
+          file_size: number
+          id: string
+          uploaded_at: string
+        }
+        Insert: {
+          album_id: string
+          device_id: string
+          file_name: string
+          file_size: number
+          id?: string
+          uploaded_at?: string
+        }
+        Update: {
+          album_id?: string
+          device_id?: string
+          file_name?: string
+          file_size?: number
+          id?: string
+          uploaded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "photos_album_id_fkey"
+            columns: ["album_id"]
+            isOneToOne: false
+            referencedRelation: "albums"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      upload_limits: {
+        Row: {
+          album_id: string
+          device_id: string
+          id: string
+          last_upload: string | null
+          upload_count: number
+        }
+        Insert: {
+          album_id: string
+          device_id: string
+          id?: string
+          last_upload?: string | null
+          upload_count?: number
+        }
+        Update: {
+          album_id?: string
+          device_id?: string
+          id?: string
+          last_upload?: string | null
+          upload_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "upload_limits_album_id_fkey"
+            columns: ["album_id"]
+            isOneToOne: false
+            referencedRelation: "albums"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
