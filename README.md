@@ -1,49 +1,44 @@
-# Welcome to your Lovable project
+# 📸 SnapMoment — Сбор свадебных фото от гостей
 
-## Project info
+**SnapMoment** — это веб-приложение, позволяющее молодожёнам легко собирать свадебные фотографии от гостей по уникальной ссылке.  
+Без установки приложений, без регистрации — просто открываешь ссылку и загружаешь фото!
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## 🚀 Возможности
 
-Follow these steps:
+- 🧑‍💼 Регистрация и вход для молодожёнов
+- 📁 Создание альбомов свадеб
+- 🔗 Генерация уникальной ссылки для гостей
+- 📷 Гость может загрузить 5–10 фото без регистрации
+- ☁️ Фото автоматически попадают в облачное хранилище
+- 🧹 Ограничение по загрузке с одного устройства
+- 🛡 Приватность и безопасность
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+---
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+## 🖼 Пример использования
 
-# Step 3: Install the necessary dependencies.
-npm i
+1. Молодожёны регистрируются на сайте.
+2. Создают альбом "Свадьба Айнуры и Бекжана".
+3. Получают ссылку `https://weddingsnap.com/aibek2025`
+4. Гости открывают ссылку со своих телефонов и загружают фото.
+5. Все фото сразу попадают в один общий альбом.
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+---
+
+## ⚙️ Установка проекта
+
+```bash
+git clone https://github.com/yourusername/weddingsnap.git
+cd weddingsnap
+
+# Backend
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+
+# Frontend
+cd ../frontend
+npm install
 npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-
