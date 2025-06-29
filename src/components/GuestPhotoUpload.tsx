@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Camera, Upload, Heart, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Camera, Upload, Heart, AlertCircle, CheckCircle, ArrowLeft, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceId } from '@/utils/deviceId';
@@ -14,6 +14,7 @@ interface Album {
   groom_name: string;
   photo_limit: number;
   wedding_date: string;
+  is_active: boolean;
 }
 
 const GuestPhotoUpload = () => {
@@ -23,14 +24,23 @@ const GuestPhotoUpload = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadCount, setUploadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [deviceSession, setDeviceSession] = useState<string | null>(null);
   const { toast } = useToast();
   const deviceId = getDeviceId();
 
   useEffect(() => {
     if (albumCode) {
       loadAlbumData();
+      initializeDeviceSession();
     }
   }, [albumCode]);
+
+  const initializeDeviceSession = () => {
+    // Создаем уникальную сессию для каждого захода
+    const sessionId = `${deviceId}-${Date.now()}`;
+    setDeviceSession(sessionId);
+    console.log('Device session initialized:', sessionId);
+  };
 
   const loadAlbumData = async () => {
     if (!albumCode) {
@@ -41,7 +51,6 @@ const GuestPhotoUpload = () => {
     try {
       console.log('Loading album with code:', albumCode);
       
-      // Загружаем данные альбома
       const { data: albumData, error: albumError } = await supabase
         .from('albums')
         .select('*')
@@ -53,7 +62,7 @@ const GuestPhotoUpload = () => {
         console.error('Album error:', albumError);
         toast({
           title: "Альбом не найден",
-          description: "Проверьте правильность ссылки",
+          description: "Проверьте правильность ссылки или альбом может быть отключен",
           variant: "destructive"
         });
         navigate('/');
@@ -71,7 +80,7 @@ const GuestPhotoUpload = () => {
         .eq('device_id', deviceId)
         .single();
 
-      console.log('Upload limits:', limitData);
+      console.log('Upload limits for device:', limitData);
       setUploadCount(limitData?.upload_count || 0);
       setLoading(false);
     } catch (error) {
@@ -92,21 +101,28 @@ const GuestPhotoUpload = () => {
     const remainingUploads = album.photo_limit - uploadCount;
     if (remainingUploads <= 0) {
       toast({
-        title: "Лимит достигнут",
-        description: "Вы уже загрузили максимальное количество фото",
+        title: "Лимит достигнут 🚫",
+        description: `Вы уже загрузили максимальное количество фото (${album.photo_limit})`,
         variant: "destructive"
       });
       return;
     }
 
     const filesToUpload = files.slice(0, remainingUploads);
+    if (filesToUpload.length < files.length) {
+      toast({
+        title: "Некоторые файлы пропущены",
+        description: `Можно загрузить только ${remainingUploads} фото из ${files.length} выбранных`,
+      });
+    }
+
     setUploading(true);
 
     try {
       let successCount = 0;
       
       for (const file of filesToUpload) {
-        console.log('Uploading file:', file.name, 'Size:', file.size);
+        console.log('Uploading file:', file.name, 'Size:', file.size, 'Session:', deviceSession);
         
         // Проверяем размер файла (максимум 10MB)
         if (file.size > 10 * 1024 * 1024) {
@@ -118,9 +134,9 @@ const GuestPhotoUpload = () => {
           continue;
         }
 
-        // Создаем уникальное имя файла
+        // Создаем уникальное имя файла с информацией о сессии
         const fileExt = file.name.split('.').pop();
-        const fileName = `${album.id}/${deviceId}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const fileName = `${album.id}/${deviceId}/${deviceSession}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
         console.log('Uploading to storage with filename:', fileName);
 
@@ -159,9 +175,12 @@ const GuestPhotoUpload = () => {
         }
 
         console.log('Photo saved to database');
+        successCount++;
+      }
 
-        // Обновляем счетчик загрузок
-        const newUploadCount = uploadCount + successCount + 1;
+      if (successCount > 0) {
+        // Обновляем счетчик загрузок для этого устройства
+        const newUploadCount = uploadCount + successCount;
         const { error: limitError } = await supabase
           .from('upload_limits')
           .upsert({
@@ -171,16 +190,20 @@ const GuestPhotoUpload = () => {
           });
 
         if (!limitError) {
-          successCount++;
+          setUploadCount(newUploadCount);
+          
+          if (newUploadCount >= album.photo_limit) {
+            toast({
+              title: "Все фото загружены! 🎉",
+              description: `Спасибо за участие! Вы загрузили ${newUploadCount} из ${album.photo_limit} фото`,
+            });
+          } else {
+            toast({
+              title: `Загружено ${successCount} фото! 📸`,
+              description: `Осталось: ${album.photo_limit - newUploadCount} фото`,
+            });
+          }
         }
-      }
-
-      if (successCount > 0) {
-        setUploadCount(prev => prev + successCount);
-        toast({
-          title: "Фото загружены! 🎉",
-          description: `Успешно загружено ${successCount} фото`,
-        });
       }
 
     } catch (error) {
@@ -210,6 +233,32 @@ const GuestPhotoUpload = () => {
 
   if (!album) {
     return null;
+  }
+
+  // Проверяем, активен ли альбом
+  if (!album.is_active) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-orange-50 flex items-center justify-center">
+        <Card className="bg-white/70 backdrop-blur-sm border-rose-200 max-w-md mx-4">
+          <CardContent className="text-center py-12">
+            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">
+              Альбом временно недоступен
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Загрузка фотографий для этого альбома в данный момент отключена
+            </p>
+            <Button
+              onClick={() => navigate('/')}
+              variant="outline"
+              className="border-rose-200 text-rose-600 hover:bg-rose-50"
+            >
+              На главную
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   const remainingUploads = album.photo_limit - uploadCount;
@@ -250,7 +299,7 @@ const GuestPhotoUpload = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Индикатор лимита */}
+            {/* Индикатор лимита для этого устройства */}
             <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
               <div className="flex items-center space-x-2 mb-2">
                 {canUpload ? (
@@ -259,7 +308,7 @@ const GuestPhotoUpload = () => {
                   <AlertCircle className="h-5 w-5 text-red-500" />
                 )}
                 <span className="font-medium">
-                  Загружено: {uploadCount} из {album.photo_limit}
+                  Ваш прогресс: {uploadCount} из {album.photo_limit}
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
@@ -270,13 +319,26 @@ const GuestPhotoUpload = () => {
               </div>
               {canUpload ? (
                 <p className="text-sm text-gray-600 mt-2">
-                  Вы можете загрузить ещё {remainingUploads} фото
+                  🎉 Вы можете загрузить ещё {remainingUploads} фото с этого устройства
                 </p>
               ) : (
                 <p className="text-sm text-red-600 mt-2">
-                  Лимит загрузок достигнут. Спасибо за участие! ❤️
+                  ✨ Спасибо! Вы загрузили максимальное количество фото с этого устройства ❤️
                 </p>
               )}
+            </div>
+
+            {/* Информация о сессии устройства */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-center space-x-2">
+                <Users className="h-4 w-4 text-blue-500" />
+                <span className="text-sm font-medium text-blue-700">
+                  Уникальная сессия устройства
+                </span>
+              </div>
+              <p className="text-xs text-blue-600 mt-1">
+                Лимит применяется к каждому устройству отдельно. Если зайдете с другого устройства, у вас будет свой лимит.
+              </p>
             </div>
 
             {/* Кнопки загрузки */}
@@ -331,6 +393,9 @@ const GuestPhotoUpload = () => {
             <div className="text-center text-sm text-gray-500">
               <p>Поддерживаются изображения до 10MB</p>
               <p>JPG, PNG, HEIC, WEBP</p>
+              <p className="mt-2 text-xs">
+                💡 Совет: Вы можете зайти с разных устройств для загрузки большего количества фото
+              </p>
             </div>
           </CardContent>
         </Card>

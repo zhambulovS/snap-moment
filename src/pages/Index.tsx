@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Camera, Heart, Users, Upload, Download, LogOut, Copy } from 'lucide-react';
+import { Camera, Heart, Users, Upload, Download, LogOut, Copy, Settings, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import AuthPage from '@/components/AuthPage';
@@ -22,6 +22,7 @@ interface Album {
   description: string;
   photo_limit: number;
   album_code: string;
+  is_active: boolean;
   created_at: string;
 }
 
@@ -127,8 +128,22 @@ const Index = () => {
       return;
     }
 
-    // Перенаправляем на страницу гостя
     navigate(`/guest/${albumCode.trim().toUpperCase()}`);
+  };
+
+  const handleUpdateAlbum = (updatedAlbum: Album) => {
+    setUserAlbums(prev => prev.map(album => 
+      album.id === updatedAlbum.id ? updatedAlbum : album
+    ));
+    setSelectedAlbum(updatedAlbum);
+  };
+
+  const handleDeleteAlbum = () => {
+    if (selectedAlbum) {
+      setUserAlbums(prev => prev.filter(album => album.id !== selectedAlbum.id));
+      setCurrentView('home');
+      setSelectedAlbum(null);
+    }
   };
 
   const handleLogout = async () => {
@@ -159,7 +174,14 @@ const Index = () => {
   }
 
   if (currentView === 'album' && selectedAlbum) {
-    return <AlbumGallery album={selectedAlbum} onBack={() => setCurrentView('home')} />;
+    return (
+      <AlbumGallery 
+        album={selectedAlbum} 
+        onBack={() => setCurrentView('home')}
+        onUpdate={handleUpdateAlbum}
+        onDelete={handleDeleteAlbum}
+      />
+    );
   }
 
   return (
@@ -447,9 +469,18 @@ const UserDashboard = ({
           {userAlbums.map((album) => (
             <Card key={album.id} className="bg-white/70 backdrop-blur-sm border-rose-200 hover:shadow-lg transition-all duration-300">
               <CardHeader>
-                <CardTitle className="text-rose-700 flex items-center">
-                  <Heart className="mr-2 h-5 w-5" />
-                  {album.bride_name} & {album.groom_name}
+                <CardTitle className="text-rose-700 flex items-center justify-between">
+                  <div className="flex items-center">
+                    <Heart className="mr-2 h-5 w-5" />
+                    {album.bride_name} & {album.groom_name}
+                  </div>
+                  <div className="flex items-center">
+                    {album.is_active ? (
+                      <Eye className="h-4 w-4 text-green-500" title="Доступ открыт" />
+                    ) : (
+                      <EyeOff className="h-4 w-4 text-red-500" title="Доступ закрыт" />
+                    )}
+                  </div>
                 </CardTitle>
                 <CardDescription>
                   {new Date(album.wedding_date).toLocaleDateString('ru-RU')}
@@ -461,7 +492,7 @@ const UserDashboard = ({
                 )}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>Ссылка для гостей:</span>
+                    <span>Код: {album.album_code}</span>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -476,7 +507,8 @@ const UserDashboard = ({
                     onClick={() => onViewAlbum(album)}
                     className="w-full bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
                   >
-                    Просмотреть альбом
+                    <Settings className="mr-2 h-4 w-4" />
+                    Управление альбомом
                   </Button>
                 </div>
               </CardContent>
