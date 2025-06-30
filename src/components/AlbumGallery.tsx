@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Camera, Download, Heart, Users, Calendar, Eye, Settings, Images, QrCode } from 'lucide-react';
+import { Camera, Download, Heart, Users, Calendar, Eye, Settings, Images, QrCode, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import AlbumSettings from './AlbumSettings';
@@ -44,6 +44,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [activeTab, setActiveTab] = useState('gallery');
   const [showQRCode, setShowQRCode] = useState(false);
+  const [deletingPhoto, setDeletingPhoto] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -120,10 +121,30 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
   };
 
   const handleDeletePhoto = async (photo: Photo) => {
+    if (deletingPhoto === photo.id) return; // Prevent double deletion
+    
+    setDeletingPhoto(photo.id);
+    
     try {
       console.log('Deleting photo:', photo);
       
-      // First delete from database
+      // First delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('wedding-photos')
+        .remove([photo.file_name]);
+
+      if (storageError) {
+        console.error('Error deleting from storage:', storageError);
+        toast({
+          title: "Ошибка",
+          description: "Не удалось удалить фото из хранилища",
+          variant: "destructive"
+        });
+        setDeletingPhoto(null);
+        return;
+      }
+
+      // Then delete from database
       const { error: dbError } = await supabase
         .from('photos')
         .delete()
@@ -136,21 +157,8 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
           description: "Не удалось удалить фотографию из базы данных",
           variant: "destructive"
         });
+        setDeletingPhoto(null);
         return;
-      }
-
-      // Then delete from storage
-      const { error: storageError } = await supabase.storage
-        .from('wedding-photos')
-        .remove([photo.file_name]);
-
-      if (storageError) {
-        console.error('Error deleting from storage:', storageError);
-        // Continue anyway as the DB record is already deleted
-        toast({
-          title: "Предупреждение",
-          description: "Фото удалено из альбома, но могло остаться в хранилище",
-        });
       }
 
       // Update upload limits
@@ -185,6 +193,8 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
         description: "Произошла ошибка при удалении фото",
         variant: "destructive"
       });
+    } finally {
+      setDeletingPhoto(null);
     }
   };
 
@@ -319,7 +329,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {photos.map((photo) => (
                   <Card 
                     key={photo.id}
@@ -339,24 +349,37 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                           <Camera className="h-8 w-8 text-gray-400" />
                         </div>
                       )}
-                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 flex items-center justify-center">
-                        <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300 flex items-center justify-center">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex space-x-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="bg-white/80 text-gray-800 hover:bg-white"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePhoto(photo);
+                            }}
+                            variant="destructive"
+                            size="sm"
+                            disabled={deletingPhoto === photo.id}
+                            className="bg-red-500/80 hover:bg-red-600"
+                          >
+                            {deletingPhoto === photo.id ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
                       </div>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeletePhoto(photo);
-                        }}
-                        variant="destructive"
-                        size="sm"
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                      >
-                        ×
-                      </Button>
                     </div>
                     <CardContent className="p-2">
-                      <p className="text-xs text-gray-500">
-                        {new Date(photo.uploaded_at).toLocaleDateString('ru-RU')}
+                      <p className="text-xs text-gray-500 truncate">
+                        {new Date(photo.uploaded_at).toLocaleDateString('ru-RU')} {new Date(photo.uploaded_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </CardContent>
                   </Card>
@@ -457,7 +480,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
               <img
                 src={selectedPhoto.url}
                 alt="Wedding photo"
-                className="max-w-full max-h-full object-contain"
+                className="max-w-full max-h-full object-contain rounded-lg"
               />
               <Button
                 onClick={() => setSelectedPhoto(null)}
@@ -467,14 +490,40 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
               >
                 ✕
               </Button>
-              <Button
-                onClick={() => handleDeletePhoto(selectedPhoto)}
-                variant="destructive"
-                size="sm"
-                className="absolute bottom-4 right-4"
-              >
-                Удалить фото
-              </Button>
+              <div className="absolute bottom-4 right-4 flex space-x-2">
+                <Button
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = selectedPhoto.url!;
+                    link.download = selectedPhoto.file_name;
+                    link.click();
+                  }}
+                  variant="secondary"
+                  size="sm"
+                  className="bg-white/80 text-gray-800 hover:bg-white"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Скачать
+                </Button>
+                <Button
+                  onClick={() => handleDeletePhoto(selectedPhoto)}
+                  variant="destructive"
+                  size="sm"
+                  disabled={deletingPhoto === selectedPhoto.id}
+                >
+                  {deletingPhoto === selectedPhoto.id ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  ) : (
+                    <Trash2 className="mr-2 h-4 w-4" />
+                  )}
+                  Удалить фото
+                </Button>
+              </div>
+              <div className="absolute bottom-4 left-4 bg-black/50 text-white px-3 py-2 rounded-lg">
+                <p className="text-sm">
+                  {new Date(selectedPhoto.uploaded_at).toLocaleDateString('ru-RU')} в {new Date(selectedPhoto.uploaded_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
             </div>
           </div>
         )}
