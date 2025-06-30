@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -476,9 +477,9 @@ const UserDashboard = ({
                   </div>
                   <div className="flex items-center">
                     {album.is_active ? (
-                      <Eye className="h-4 w-4 text-green-500" title="Доступ открыт" />
+                      <Eye className="h-4 w-4 text-green-500" />
                     ) : (
-                      <EyeOff className="h-4 w-4 text-red-500" title="Доступ закрыт" />
+                      <EyeOff className="h-4 w-4 text-red-500" />
                     )}
                   </div>
                 </CardTitle>
