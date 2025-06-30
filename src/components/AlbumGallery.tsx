@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -44,16 +44,14 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [activeTab, setActiveTab] = useState('gallery');
   const [showQRCode, setShowQRCode] = useState(false);
-  const [deletingPhoto, setDeletingPhoto] = useState<string | null>(null);
+  const [deletingPhotos, setDeletingPhotos] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
-  useEffect(() => {
-    loadPhotos();
-    loadUploadStats();
-  }, [album.id]);
-
-  const loadPhotos = async () => {
+  // Optimized photo loading with error handling
+  const loadPhotos = useCallback(async () => {
     try {
+      console.log('Loading photos for album:', album.id);
+      
       const { data: photosData, error } = await supabase
         .from('photos')
         .select('*')
@@ -70,23 +68,38 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
         return;
       }
 
-      const photosWithUrls = await Promise.all(
-        (photosData || []).map(async (photo) => {
-          try {
-            const { data } = supabase.storage
-              .from('wedding-photos')
-              .getPublicUrl(photo.file_name);
-            
-            return {
-              ...photo,
-              url: data.publicUrl
-            };
-          } catch (error) {
-            console.error('Error getting photo URL:', error);
-            return photo;
-          }
-        })
-      );
+      if (!photosData || photosData.length === 0) {
+        console.log('No photos found for album');
+        setPhotos([]);
+        setLoading(false);
+        return;
+      }
+
+      // Batch process URLs to avoid overwhelming the browser
+      const batchSize = 10;
+      const photosWithUrls: Photo[] = [];
+      
+      for (let i = 0; i < photosData.length; i += batchSize) {
+        const batch = photosData.slice(i, i + batchSize);
+        const batchWithUrls = await Promise.all(
+          batch.map(async (photo) => {
+            try {
+              const { data } = supabase.storage
+                .from('wedding-photos')
+                .getPublicUrl(photo.file_name);
+              
+              return {
+                ...photo,
+                url: data.publicUrl
+              };
+            } catch (error) {
+              console.error('Error getting photo URL for:', photo.file_name, error);
+              return photo;
+            }
+          })
+        );
+        photosWithUrls.push(...batchWithUrls);
+      }
 
       setPhotos(photosWithUrls);
       setLoading(false);
@@ -94,9 +107,10 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
       console.error('Error in loadPhotos:', error);
       setLoading(false);
     }
-  };
+  }, [album.id, toast]);
 
-  const loadUploadStats = async () => {
+  // Optimized upload stats loading
+  const loadUploadStats = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('upload_limits')
@@ -113,61 +127,61 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
     } catch (error) {
       console.error('Error in loadUploadStats:', error);
     }
-  };
+  }, [album.id]);
 
-  const handleAlbumUpdate = (updatedAlbum: Album) => {
+  useEffect(() => {
+    loadPhotos();
+    loadUploadStats();
+  }, [loadPhotos, loadUploadStats]);
+
+  const handleAlbumUpdate = useCallback((updatedAlbum: Album) => {
     setAlbum(updatedAlbum);
     onUpdate(updatedAlbum);
-  };
+  }, [onUpdate]);
 
-  const handleDeletePhoto = async (photo: Photo) => {
-    if (deletingPhoto === photo.id) return; // Prevent double deletion
+  // Improved photo deletion with proper error handling and state management
+  const handleDeletePhoto = useCallback(async (photo: Photo) => {
+    if (deletingPhotos.has(photo.id)) {
+      console.log('Photo already being deleted:', photo.id);
+      return;
+    }
     
-    setDeletingPhoto(photo.id);
+    setDeletingPhotos(prev => new Set(prev).add(photo.id));
     
     try {
-      console.log('Deleting photo:', photo);
+      console.log('Starting deletion process for photo:', photo.id, photo.file_name);
       
-      // First delete from storage
+      // First, try to delete from storage
       const { error: storageError } = await supabase.storage
         .from('wedding-photos')
         .remove([photo.file_name]);
 
       if (storageError) {
-        console.error('Error deleting from storage:', storageError);
-        toast({
-          title: "Ошибка",
-          description: "Не удалось удалить фото из хранилища",
-          variant: "destructive"
-        });
-        setDeletingPhoto(null);
-        return;
+        console.error('Storage deletion error:', storageError);
+        // Continue with database deletion even if storage fails
+        // The file might not exist in storage but still be in database
       }
 
-      // Then delete from database
+      // Delete from database
       const { error: dbError } = await supabase
         .from('photos')
         .delete()
         .eq('id', photo.id);
 
       if (dbError) {
-        console.error('Error deleting from database:', dbError);
-        toast({
-          title: "Ошибка",
-          description: "Не удалось удалить фотографию из базы данных",
-          variant: "destructive"
-        });
-        setDeletingPhoto(null);
-        return;
+        console.error('Database deletion error:', dbError);
+        throw new Error(`Не удалось удалить фото из базы данных: ${dbError.message}`);
       }
 
-      // Update upload limits
+      console.log('Photo deleted successfully from database');
+      
+      // Update upload limits - find the device and decrease count
       const deviceStat = uploadStats.find(s => s.device_id === photo.device_id);
       if (deviceStat && deviceStat.upload_count > 0) {
         const { error: limitError } = await supabase
           .from('upload_limits')
           .update({
-            upload_count: deviceStat.upload_count - 1
+            upload_count: Math.max(0, deviceStat.upload_count - 1)
           })
           .eq('album_id', album.id)
           .eq('device_id', photo.device_id);
@@ -177,43 +191,49 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
         }
       }
 
-      // Update UI
+      // Update UI immediately
       setPhotos(prev => prev.filter(p => p.id !== photo.id));
       setSelectedPhoto(null);
+      
+      // Reload stats to ensure consistency
       loadUploadStats();
       
       toast({
         title: "Фото удалено",
         description: "Фотография успешно удалена",
       });
+      
     } catch (error) {
       console.error('Error in handleDeletePhoto:', error);
       toast({
-        title: "Ошибка",
-        description: "Произошла ошибка при удалении фото",
+        title: "Ошибка удаления",
+        description: error instanceof Error ? error.message : "Произошла ошибка при удалении фото",
         variant: "destructive"
       });
     } finally {
-      setDeletingPhoto(null);
+      setDeletingPhotos(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(photo.id);
+        return newSet;
+      });
     }
-  };
+  }, [deletingPhotos, uploadStats, album.id, loadUploadStats, toast]);
 
-  const copyAlbumLink = () => {
+  const copyAlbumLink = useCallback(() => {
     const link = `${window.location.origin}/guest/${album.album_code}`;
     navigator.clipboard.writeText(link);
     toast({
       title: "Ссылка скопирована!",
       description: "Поделитесь этой ссылкой с гостями",
     });
-  };
+  }, [album.album_code, toast]);
 
-  const generateQRCode = () => {
+  const generateQRCode = useCallback(() => {
     const link = `${window.location.origin}/guest/${album.album_code}`;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(link)}`;
-    return qrUrl;
-  };
+    return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(link)}`;
+  }, [album.album_code]);
 
-  const downloadQRCode = () => {
+  const downloadQRCode = useCallback(() => {
     const qrUrl = generateQRCode();
     const link = document.createElement('a');
     link.href = qrUrl;
@@ -226,7 +246,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
       title: "QR-код загружен!",
       description: "QR-код сохранен в загрузки",
     });
-  };
+  }, [generateQRCode, album.bride_name, album.groom_name, toast]);
 
   if (loading) {
     return (
@@ -250,7 +270,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
           ← Назад к альбомам
         </Button>
 
-        {/* Заголовок альбома */}
+        {/* Album Header */}
         <Card className="bg-white/70 backdrop-blur-sm border-rose-200 mb-8">
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -295,7 +315,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
           </CardHeader>
         </Card>
 
-        {/* Вкладки */}
+        {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-2 bg-white/70 backdrop-blur-sm border-rose-200">
             <TabsTrigger value="gallery" className="flex items-center space-x-2">
@@ -343,6 +363,10 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                           alt="Wedding photo"
                           className="w-full h-full object-cover"
                           loading="lazy"
+                          onError={(e) => {
+                            console.error('Failed to load image:', photo.url);
+                            e.currentTarget.style.display = 'none';
+                          }}
                         />
                       ) : (
                         <div className="w-full h-full bg-gray-200 flex items-center justify-center">
@@ -365,10 +389,10 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                             }}
                             variant="destructive"
                             size="sm"
-                            disabled={deletingPhoto === photo.id}
+                            disabled={deletingPhotos.has(photo.id)}
                             className="bg-red-500/80 hover:bg-red-600"
                           >
-                            {deletingPhoto === photo.id ? (
+                            {deletingPhotos.has(photo.id) ? (
                               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                             ) : (
                               <Trash2 className="h-4 w-4" />
@@ -395,7 +419,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
               onDelete={onDelete}
             />
             
-            {/* Статистика гостей */}
+            {/* Guest Statistics */}
             {uploadStats.length > 0 && (
               <Card className="bg-white/70 backdrop-blur-sm border-rose-200 mt-6">
                 <CardHeader>
@@ -470,7 +494,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
           </div>
         )}
 
-        {/* Модальное окно для просмотра фото */}
+        {/* Photo Modal */}
         {selectedPhoto && (
           <div 
             className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
@@ -509,9 +533,9 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                   onClick={() => handleDeletePhoto(selectedPhoto)}
                   variant="destructive"
                   size="sm"
-                  disabled={deletingPhoto === selectedPhoto.id}
+                  disabled={deletingPhotos.has(selectedPhoto.id)}
                 >
-                  {deletingPhoto === selectedPhoto.id ? (
+                  {deletingPhotos.has(selectedPhoto.id) ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   ) : (
                     <Trash2 className="mr-2 h-4 w-4" />

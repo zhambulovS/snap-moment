@@ -69,7 +69,7 @@ const AuthPage = () => {
           <div className="flex items-center justify-center space-x-2 mb-4">
             <Camera className="h-8 w-8 text-rose-500" />
             <CardTitle className="text-2xl bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
-              WeddingSnap
+              SnapMoment
             </CardTitle>
             <Heart className="h-6 w-6 text-pink-500" />
           </div>
