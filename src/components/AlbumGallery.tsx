@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Camera, Download, Heart, Users, Calendar, Eye, Settings, Images } from 'lucide-react';
+import { Camera, Download, Heart, Users, Calendar, Eye, Settings, Images, QrCode } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import AlbumSettings from './AlbumSettings';
@@ -43,6 +43,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
   const [loading, setLoading] = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [activeTab, setActiveTab] = useState('gallery');
+  const [showQRCode, setShowQRCode] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -120,16 +121,9 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
 
   const handleDeletePhoto = async (photo: Photo) => {
     try {
-      // Удаляем из storage
-      const { error: storageError } = await supabase.storage
-        .from('wedding-photos')
-        .remove([photo.file_name]);
-
-      if (storageError) {
-        console.error('Error deleting from storage:', storageError);
-      }
-
-      // Удаляем из базы данных
+      console.log('Deleting photo:', photo);
+      
+      // First delete from database
       const { error: dbError } = await supabase
         .from('photos')
         .delete()
@@ -139,25 +133,43 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
         console.error('Error deleting from database:', dbError);
         toast({
           title: "Ошибка",
-          description: "Не удалось удалить фотографию",
+          description: "Не удалось удалить фотографию из базы данных",
           variant: "destructive"
         });
         return;
       }
 
-      // Обновляем счетчик загрузок
-      const { error: limitError } = await supabase
-        .from('upload_limits')
-        .update({
-          upload_count: Math.max(0, uploadStats.find(s => s.device_id === photo.device_id)?.upload_count - 1 || 0)
-        })
-        .eq('album_id', album.id)
-        .eq('device_id', photo.device_id);
+      // Then delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('wedding-photos')
+        .remove([photo.file_name]);
 
-      if (limitError) {
-        console.error('Error updating upload limits:', limitError);
+      if (storageError) {
+        console.error('Error deleting from storage:', storageError);
+        // Continue anyway as the DB record is already deleted
+        toast({
+          title: "Предупреждение",
+          description: "Фото удалено из альбома, но могло остаться в хранилище",
+        });
       }
 
+      // Update upload limits
+      const deviceStat = uploadStats.find(s => s.device_id === photo.device_id);
+      if (deviceStat && deviceStat.upload_count > 0) {
+        const { error: limitError } = await supabase
+          .from('upload_limits')
+          .update({
+            upload_count: deviceStat.upload_count - 1
+          })
+          .eq('album_id', album.id)
+          .eq('device_id', photo.device_id);
+
+        if (limitError) {
+          console.error('Error updating upload limits:', limitError);
+        }
+      }
+
+      // Update UI
       setPhotos(prev => prev.filter(p => p.id !== photo.id));
       setSelectedPhoto(null);
       loadUploadStats();
@@ -182,6 +194,27 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
     toast({
       title: "Ссылка скопирована!",
       description: "Поделитесь этой ссылкой с гостями",
+    });
+  };
+
+  const generateQRCode = () => {
+    const link = `${window.location.origin}/guest/${album.album_code}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(link)}`;
+    return qrUrl;
+  };
+
+  const downloadQRCode = () => {
+    const qrUrl = generateQRCode();
+    const link = document.createElement('a');
+    link.href = qrUrl;
+    link.download = `qr-${album.bride_name}-${album.groom_name}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "QR-код загружен!",
+      description: "QR-код сохранен в загрузки",
     });
   };
 
@@ -231,13 +264,23 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                   </div>
                 </div>
               </div>
-              <Button
-                onClick={copyAlbumLink}
-                className="bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
-              >
-                <Users className="mr-2 h-4 w-4" />
-                Поделиться ссылкой
-              </Button>
+              <div className="flex space-x-2">
+                <Button
+                  onClick={() => setShowQRCode(true)}
+                  variant="outline"
+                  className="border-rose-300 text-rose-600 hover:bg-rose-50"
+                >
+                  <QrCode className="mr-2 h-4 w-4" />
+                  QR-код
+                </Button>
+                <Button
+                  onClick={copyAlbumLink}
+                  className="bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Поделиться ссылкой
+                </Button>
+              </div>
             </div>
           </CardHeader>
         </Card>
@@ -360,6 +403,49 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
             )}
           </TabsContent>
         </Tabs>
+
+        {/* QR Code Modal */}
+        {showQRCode && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowQRCode(false)}
+          >
+            <div className="bg-white rounded-lg p-8 max-w-md w-full text-center" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-2xl font-bold text-gray-800 mb-4">QR-код для гостей</h3>
+              <div className="mb-4">
+                <img
+                  src={generateQRCode()}
+                  alt="QR Code"
+                  className="mx-auto rounded-lg shadow-lg"
+                />
+              </div>
+              <div className="mb-6">
+                <p className="text-lg font-semibold text-rose-600 mb-2">
+                  {album.bride_name} & {album.groom_name}
+                </p>
+                <p className="text-sm text-gray-600">
+                  Отсканируйте QR-код для загрузки фото
+                </p>
+              </div>
+              <div className="flex space-x-2">
+                <Button
+                  onClick={downloadQRCode}
+                  className="flex-1 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Скачать
+                </Button>
+                <Button
+                  onClick={() => setShowQRCode(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Закрыть
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Модальное окно для просмотра фото */}
         {selectedPhoto && (

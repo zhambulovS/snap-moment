@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -6,11 +7,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Camera, Heart, Users, Upload, Download, LogOut, Copy, Settings, Eye, EyeOff } from 'lucide-react';
+import { Camera, Heart, Users, Upload, Download, LogOut, Copy, Settings, Eye, EyeOff, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import AuthPage from '@/components/AuthPage';
 import AlbumGallery from '@/components/AlbumGallery';
+import UserProfile from '@/components/UserProfile';
 import { supabase } from '@/integrations/supabase/client';
 import { generateAlbumCode } from '@/utils/albumCode';
 import { useNavigate } from 'react-router-dom';
@@ -29,7 +31,7 @@ interface Album {
 
 const Index = () => {
   const { user, loading: authLoading, signOut } = useAuth();
-  const [currentView, setCurrentView] = useState<'home' | 'create' | 'album'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'create' | 'album' | 'profile'>('home');
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
   const [userAlbums, setUserAlbums] = useState<Album[]>([]);
   const [loading, setLoading] = useState(false);
@@ -174,6 +176,10 @@ const Index = () => {
     return <CreateAlbumForm onSubmit={handleCreateAlbum} onBack={() => setCurrentView('home')} loading={loading} />;
   }
 
+  if (currentView === 'profile') {
+    return <UserProfile onBack={() => setCurrentView('home')} />;
+  }
+
   if (currentView === 'album' && selectedAlbum) {
     return (
       <AlbumGallery 
@@ -195,13 +201,24 @@ const Index = () => {
             <div className="flex items-center space-x-3">
               <Camera className="h-8 w-8 text-rose-500" />
               <h1 className="text-4xl font-bold bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
-                WeddingSnap
+                SnapMoment
               </h1>
               <Heart className="h-6 w-6 text-pink-500 animate-pulse" />
             </div>
             
             <div className="flex items-center space-x-4">
-              <span className="text-gray-600">Привет, {user.email}!</span>
+              <span className="text-gray-600">
+                Привет, {user.user_metadata?.full_name || user.email}!
+              </span>
+              <Button
+                onClick={() => setCurrentView('profile')}
+                variant="ghost"
+                size="sm"
+                className="text-rose-600 hover:text-rose-700"
+              >
+                <User className="h-4 w-4 mr-1" />
+                Профиль
+              </Button>
               <Button
                 onClick={handleLogout}
                 variant="ghost"
@@ -238,7 +255,7 @@ const Index = () => {
       <footer className="bg-white/70 backdrop-blur-sm border-t border-rose-200 py-8">
         <div className="container mx-auto px-4 text-center">
           <p className="text-gray-600">
-            © 2024 WeddingSnap. Сделано с ❤️ для особенных моментов
+            © {new Date().getFullYear()} SnapMoment. Сделано с ❤️
           </p>
         </div>
       </footer>
