@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +6,7 @@ import { Camera, Upload, X, Heart, AlertCircle, CheckCircle, Video, Image } from
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useParams } from 'react-router-dom';
-import { generateDeviceId } from '@/utils/deviceId';
+import { getDeviceId } from '@/utils/deviceId';
 
 interface Album {
   id: string;
@@ -36,7 +35,7 @@ const GuestMediaUpload = () => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
-  const deviceId = generateDeviceId();
+  const deviceId = getDeviceId();
 
   React.useEffect(() => {
     loadAlbum();
