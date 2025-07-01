@@ -34,16 +34,12 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <Routes>
-            {/* Public routes for guests */}
+            {/* Public routes for guests - always available */}
             <Route path="/guest/:albumCode" element={<PublicAlbumView />} />
             <Route path="/guest/:albumCode/upload" element={<GuestMediaUpload />} />
             
-            {/* Protected routes */}
-            {user ? (
-              <Route path="/" element={<Index />} />
-            ) : (
-              <Route path="/" element={<AuthPage />} />
-            )}
+            {/* Main app routes */}
+            <Route path="/" element={user ? <Index /> : <AuthPage />} />
             
             {/* 404 page */}
             <Route path="*" element={<NotFound />} />
