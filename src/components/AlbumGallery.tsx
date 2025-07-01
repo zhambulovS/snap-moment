@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Camera, Download, Heart, Users, Calendar, Eye, Settings, Images, QrCode, Trash2 } from 'lucide-react';
+import { Camera, Download, Heart, Users, Calendar, Eye, Settings, Images, QrCode, Trash2, Play, Volume2, VolumeX, Video } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import AlbumSettings from './AlbumSettings';
@@ -20,13 +19,17 @@ interface Album {
   created_at: string;
 }
 
-interface Photo {
+interface MediaFile {
   id: string;
   file_name: string;
   file_size: number;
+  file_type: string;
+  duration?: number;
   uploaded_at: string;
   device_id: string;
+  storage_path?: string;
   url?: string;
+  thumbnail_url?: string;
 }
 
 interface AlbumGalleryProps {
@@ -38,73 +41,75 @@ interface AlbumGalleryProps {
 
 const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: AlbumGalleryProps) => {
   const [album, setAlbum] = useState(initialAlbum);
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [uploadStats, setUploadStats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<MediaFile | null>(null);
   const [activeTab, setActiveTab] = useState('gallery');
   const [showQRCode, setShowQRCode] = useState(false);
-  const [deletingPhotos, setDeletingPhotos] = useState<Set<string>>(new Set());
+  const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
+  const [videoMuted, setVideoMuted] = useState(false);
   const { toast } = useToast();
 
   // Optimized photo loading with error handling
-  const loadPhotos = useCallback(async () => {
+  const loadMediaFiles = useCallback(async () => {
     try {
-      console.log('Loading photos for album:', album.id);
+      console.log('Loading media files for album:', album.id);
       
-      const { data: photosData, error } = await supabase
+      const { data: mediaData, error } = await supabase
         .from('photos')
         .select('*')
         .eq('album_id', album.id)
         .order('uploaded_at', { ascending: false });
 
       if (error) {
-        console.error('Error loading photos:', error);
+        console.error('Error loading media files:', error);
         toast({
           title: "Ошибка",
-          description: "Не удалось загрузить фотографии",
+          description: "Не удалось загрузить медиафайлы",
           variant: "destructive"
         });
         return;
       }
 
-      if (!photosData || photosData.length === 0) {
-        console.log('No photos found for album');
-        setPhotos([]);
+      if (!mediaData || mediaData.length === 0) {
+        console.log('No media files found for album');
+        setMediaFiles([]);
         setLoading(false);
         return;
       }
 
       // Batch process URLs to avoid overwhelming the browser
       const batchSize = 10;
-      const photosWithUrls: Photo[] = [];
+      const mediaWithUrls: MediaFile[] = [];
       
-      for (let i = 0; i < photosData.length; i += batchSize) {
-        const batch = photosData.slice(i, i + batchSize);
+      for (let i = 0; i < mediaData.length; i += batchSize) {
+        const batch = mediaData.slice(i, i + batchSize);
         const batchWithUrls = await Promise.all(
-          batch.map(async (photo) => {
+          batch.map(async (media) => {
             try {
+              // Use new storage bucket
               const { data } = supabase.storage
-                .from('wedding-photos')
-                .getPublicUrl(photo.file_name);
+                .from('wedding-media')
+                .getPublicUrl(media.storage_path || media.file_name);
               
               return {
-                ...photo,
+                ...media,
                 url: data.publicUrl
               };
             } catch (error) {
-              console.error('Error getting photo URL for:', photo.file_name, error);
-              return photo;
+              console.error('Error getting media URL for:', media.file_name, error);
+              return media;
             }
           })
         );
-        photosWithUrls.push(...batchWithUrls);
+        mediaWithUrls.push(...batchWithUrls);
       }
 
-      setPhotos(photosWithUrls);
+      setMediaFiles(mediaWithUrls);
       setLoading(false);
     } catch (error) {
-      console.error('Error in loadPhotos:', error);
+      console.error('Error in loadMediaFiles:', error);
       setLoading(false);
     }
   }, [album.id, toast]);
@@ -130,53 +135,52 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
   }, [album.id]);
 
   useEffect(() => {
-    loadPhotos();
+    loadMediaFiles();
     loadUploadStats();
-  }, [loadPhotos, loadUploadStats]);
+  }, [loadMediaFiles, loadUploadStats]);
 
   const handleAlbumUpdate = useCallback((updatedAlbum: Album) => {
     setAlbum(updatedAlbum);
     onUpdate(updatedAlbum);
   }, [onUpdate]);
 
-  // Improved photo deletion with proper error handling and state management
-  const handleDeletePhoto = useCallback(async (photo: Photo) => {
-    if (deletingPhotos.has(photo.id)) {
-      console.log('Photo already being deleted:', photo.id);
+  // Updated delete function for new storage bucket
+  const handleDeleteMedia = useCallback(async (media: MediaFile) => {
+    if (deletingFiles.has(media.id)) {
+      console.log('Media already being deleted:', media.id);
       return;
     }
     
-    setDeletingPhotos(prev => new Set(prev).add(photo.id));
+    setDeletingFiles(prev => new Set(prev).add(media.id));
     
     try {
-      console.log('Starting deletion process for photo:', photo.id, photo.file_name);
+      console.log('Starting deletion process for media:', media.id, media.file_name);
       
       // First, try to delete from storage
       const { error: storageError } = await supabase.storage
-        .from('wedding-photos')
-        .remove([photo.file_name]);
+        .from('wedding-media')
+        .remove([media.storage_path || media.file_name]);
 
       if (storageError) {
         console.error('Storage deletion error:', storageError);
         // Continue with database deletion even if storage fails
-        // The file might not exist in storage but still be in database
       }
 
       // Delete from database
       const { error: dbError } = await supabase
         .from('photos')
         .delete()
-        .eq('id', photo.id);
+        .eq('id', media.id);
 
       if (dbError) {
         console.error('Database deletion error:', dbError);
-        throw new Error(`Не удалось удалить фото из базы данных: ${dbError.message}`);
+        throw new Error(`Не удалось удалить файл из базы данных: ${dbError.message}`);
       }
 
-      console.log('Photo deleted successfully from database');
+      console.log('Media deleted successfully from database');
       
       // Update upload limits - find the device and decrease count
-      const deviceStat = uploadStats.find(s => s.device_id === photo.device_id);
+      const deviceStat = uploadStats.find(s => s.device_id === media.device_id);
       if (deviceStat && deviceStat.upload_count > 0) {
         const { error: limitError } = await supabase
           .from('upload_limits')
@@ -184,7 +188,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
             upload_count: Math.max(0, deviceStat.upload_count - 1)
           })
           .eq('album_id', album.id)
-          .eq('device_id', photo.device_id);
+          .eq('device_id', media.device_id);
 
         if (limitError) {
           console.error('Error updating upload limits:', limitError);
@@ -192,32 +196,32 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
       }
 
       // Update UI immediately
-      setPhotos(prev => prev.filter(p => p.id !== photo.id));
-      setSelectedPhoto(null);
+      setMediaFiles(prev => prev.filter(m => m.id !== media.id));
+      setSelectedMedia(null);
       
       // Reload stats to ensure consistency
       loadUploadStats();
       
       toast({
-        title: "Фото удалено",
-        description: "Фотография успешно удалена",
+        title: "Файл удален",
+        description: "Медиафайл успешно удален",
       });
       
     } catch (error) {
-      console.error('Error in handleDeletePhoto:', error);
+      console.error('Error in handleDeleteMedia:', error);
       toast({
         title: "Ошибка удаления",
-        description: error instanceof Error ? error.message : "Произошла ошибка при удалении фото",
+        description: error instanceof Error ? error.message : "Произошла ошибка при удалении файла",
         variant: "destructive"
       });
     } finally {
-      setDeletingPhotos(prev => {
+      setDeletingFiles(prev => {
         const newSet = new Set(prev);
-        newSet.delete(photo.id);
+        newSet.delete(media.id);
         return newSet;
       });
     }
-  }, [deletingPhotos, uploadStats, album.id, loadUploadStats, toast]);
+  }, [deletingFiles, uploadStats, album.id, loadUploadStats, toast]);
 
   const copyAlbumLink = useCallback(() => {
     const link = `${window.location.origin}/guest/${album.album_code}`;
@@ -286,7 +290,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                   </div>
                   <div className="flex items-center space-x-1">
                     <Camera className="h-4 w-4" />
-                    <span>{photos.length} фото</span>
+                    <span>{mediaFiles.length} медиафайлов</span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <Users className="h-4 w-4" />
@@ -329,15 +333,15 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
           </TabsList>
 
           <TabsContent value="gallery" className="mt-6">
-            {photos.length === 0 ? (
+            {mediaFiles.length === 0 ? (
               <Card className="bg-white/70 backdrop-blur-sm border-rose-200">
                 <CardContent className="text-center py-12">
                   <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-gray-700 mb-2">
-                    Пока нет фотографий
+                    Пока нет медиафайлов
                   </h3>
                   <p className="text-gray-600 mb-4">
-                    Поделитесь ссылкой с гостями, чтобы они могли загружать фото
+                    Поделитесь ссылкой с гостями, чтобы они могли загружать фото и видео
                   </p>
                   <Button
                     onClick={copyAlbumLink}
@@ -350,28 +354,51 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
               </Card>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {photos.map((photo) => (
+                {mediaFiles.map((media) => (
                   <Card 
-                    key={photo.id}
+                    key={media.id}
                     className="bg-white/70 backdrop-blur-sm border-rose-200 overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer group"
-                    onClick={() => setSelectedPhoto(photo)}
+                    onClick={() => setSelectedMedia(media)}
                   >
                     <div className="aspect-square relative">
-                      {photo.url ? (
-                        <img
-                          src={photo.url}
-                          alt="Wedding photo"
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                          onError={(e) => {
-                            console.error('Failed to load image:', photo.url);
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                          <Camera className="h-8 w-8 text-gray-400" />
+                      {media.file_type === 'video' ? (
+                        <div className="w-full h-full bg-black flex items-center justify-center relative">
+                          <video
+                            className="w-full h-full object-cover"
+                            muted
+                            loop
+                            onMouseEnter={(e) => e.currentTarget.play()}
+                            onMouseLeave={(e) => e.currentTarget.pause()}
+                          >
+                            <source src={media.url} type="video/mp4" />
+                          </video>
+                          <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center">
+                            <Play className="h-12 w-12 text-white opacity-80" />
+                          </div>
+                          <div className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 rounded text-xs">
+                            <Video className="inline h-3 w-3 mr-1" />
+                            {media.duration ? `${Math.floor(media.duration / 60)}:${String(media.duration % 60).padStart(2, '0')}` : 'Видео'}
+                          </div>
                         </div>
+                      ) : (
+                        <>
+                          {media.url ? (
+                            <img
+                              src={media.url}
+                              alt="Wedding media"
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              onError={(e) => {
+                                console.error('Failed to load image:', media.url);
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                              <Camera className="h-8 w-8 text-gray-400" />
+                            </div>
+                          )}
+                        </>
                       )}
                       <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300 flex items-center justify-center">
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex space-x-2">
@@ -385,14 +412,14 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                           <Button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleDeletePhoto(photo);
+                              handleDeleteMedia(media);
                             }}
                             variant="destructive"
                             size="sm"
-                            disabled={deletingPhotos.has(photo.id)}
+                            disabled={deletingFiles.has(media.id)}
                             className="bg-red-500/80 hover:bg-red-600"
                           >
-                            {deletingPhotos.has(photo.id) ? (
+                            {deletingFiles.has(media.id) ? (
                               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                             ) : (
                               <Trash2 className="h-4 w-4" />
@@ -403,7 +430,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                     </div>
                     <CardContent className="p-2">
                       <p className="text-xs text-gray-500 truncate">
-                        {new Date(photo.uploaded_at).toLocaleDateString('ru-RU')} {new Date(photo.uploaded_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(media.uploaded_at).toLocaleDateString('ru-RU')} {new Date(media.uploaded_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </CardContent>
                   </Card>
@@ -440,7 +467,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                         </div>
                         <div className="text-right">
                           <p className="font-bold text-rose-600">{stat.upload_count}/{album.photo_limit}</p>
-                          <p className="text-sm text-gray-600">фото</p>
+                          <p className="text-sm text-gray-600">файлов</p>
                         </div>
                       </div>
                     ))}
@@ -471,7 +498,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                   {album.bride_name} & {album.groom_name}
                 </p>
                 <p className="text-sm text-gray-600">
-                  Отсканируйте QR-код для загрузки фото
+                  Отсканируйте QR-код для загрузки фото и видео
                 </p>
               </div>
               <div className="flex space-x-2">
@@ -494,32 +521,57 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
           </div>
         )}
 
-        {/* Photo Modal */}
-        {selectedPhoto && (
+        {/* Media Modal */}
+        {selectedMedia && (
           <div 
             className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
-            onClick={() => setSelectedPhoto(null)}
+            onClick={() => setSelectedMedia(null)}
           >
             <div className="max-w-4xl max-h-full relative">
-              <img
-                src={selectedPhoto.url}
-                alt="Wedding photo"
-                className="max-w-full max-h-full object-contain rounded-lg"
-              />
+              {selectedMedia.file_type === 'video' ? (
+                <video
+                  controls
+                  autoPlay
+                  muted={videoMuted}
+                  className="max-w-full max-h-full object-contain rounded-lg"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <source src={selectedMedia.url} type="video/mp4" />
+                </video>
+              ) : (
+                <img
+                  src={selectedMedia.url}
+                  alt="Wedding media"
+                  className="max-w-full max-h-full object-contain rounded-lg"
+                />
+              )}
+              
               <Button
-                onClick={() => setSelectedPhoto(null)}
+                onClick={() => setSelectedMedia(null)}
                 variant="ghost"
                 size="sm"
                 className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20"
               >
                 ✕
               </Button>
+              
+              {selectedMedia.file_type === 'video' && (
+                <Button
+                  onClick={() => setVideoMuted(!videoMuted)}
+                  variant="ghost"
+                  size="sm"
+                  className="absolute top-4 left-4 text-white hover:bg-white hover:bg-opacity-20"
+                >
+                  {videoMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </Button>
+              )}
+              
               <div className="absolute bottom-4 right-4 flex space-x-2">
                 <Button
                   onClick={() => {
                     const link = document.createElement('a');
-                    link.href = selectedPhoto.url!;
-                    link.download = selectedPhoto.file_name;
+                    link.href = selectedMedia.url!;
+                    link.download = selectedMedia.file_name;
                     link.click();
                   }}
                   variant="secondary"
@@ -530,22 +582,25 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                   Скачать
                 </Button>
                 <Button
-                  onClick={() => handleDeletePhoto(selectedPhoto)}
+                  onClick={() => handleDeleteMedia(selectedMedia)}
                   variant="destructive"
                   size="sm"
-                  disabled={deletingPhotos.has(selectedPhoto.id)}
+                  disabled={deletingFiles.has(selectedMedia.id)}
                 >
-                  {deletingPhotos.has(selectedPhoto.id) ? (
+                  {deletingFiles.has(selectedMedia.id) ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   ) : (
                     <Trash2 className="mr-2 h-4 w-4" />
                   )}
-                  Удалить фото
+                  Удалить
                 </Button>
               </div>
               <div className="absolute bottom-4 left-4 bg-black/50 text-white px-3 py-2 rounded-lg">
                 <p className="text-sm">
-                  {new Date(selectedPhoto.uploaded_at).toLocaleDateString('ru-RU')} в {new Date(selectedPhoto.uploaded_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                  {new Date(selectedMedia.uploaded_at).toLocaleDateString('ru-RU')} в {new Date(selectedMedia.uploaded_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+                <p className="text-xs opacity-80">
+                  {selectedMedia.file_type === 'video' ? 'Видео' : 'Фото'} • {(selectedMedia.file_size / (1024 * 1024)).toFixed(1)} МБ
                 </p>
               </div>
             </div>

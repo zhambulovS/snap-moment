@@ -60,25 +60,37 @@ export type Database = {
         Row: {
           album_id: string
           device_id: string
+          duration: number | null
           file_name: string
           file_size: number
+          file_type: string
           id: string
+          storage_path: string | null
+          thumbnail_url: string | null
           uploaded_at: string
         }
         Insert: {
           album_id: string
           device_id: string
+          duration?: number | null
           file_name: string
           file_size: number
+          file_type?: string
           id?: string
+          storage_path?: string | null
+          thumbnail_url?: string | null
           uploaded_at?: string
         }
         Update: {
           album_id?: string
           device_id?: string
+          duration?: number | null
           file_name?: string
           file_size?: number
+          file_type?: string
           id?: string
+          storage_path?: string | null
+          thumbnail_url?: string | null
           uploaded_at?: string
         }
         Relationships: [
@@ -149,7 +161,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      validate_media_upload: {
+        Args: {
+          file_size_bytes: number
+          file_type: string
+          file_extension: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

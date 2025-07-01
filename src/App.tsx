@@ -4,30 +4,54 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/hooks/useAuth";
+import { useAuth } from "./hooks/useAuth";
+import AuthPage from "./components/AuthPage";
 import Index from "./pages/Index";
-import GuestPhotoUpload from "./components/GuestPhotoUpload";
 import NotFound from "./pages/NotFound";
+import PublicAlbumView from "./components/PublicAlbumView";
+import GuestMediaUpload from "./components/GuestMediaUpload";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
+const App = () => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-orange-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-rose-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Загрузка...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/guest/:albumCode" element={<GuestPhotoUpload />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            {/* Public routes for guests */}
+            <Route path="/guest/:albumCode" element={<PublicAlbumView />} />
+            <Route path="/guest/:albumCode/upload" element={<GuestMediaUpload />} />
+            
+            {/* Protected routes */}
+            {user ? (
+              <Route path="/" element={<Index />} />
+            ) : (
+              <Route path="/" element={<AuthPage />} />
+            )}
+            
+            {/* 404 page */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
-    </AuthProvider>
-  </QueryClientProvider>
-);
+    </QueryClientProvider>
+  );
+};
 
 export default App;
