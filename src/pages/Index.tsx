@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +14,8 @@ import UserProfile from '@/components/UserProfile';
 import { supabase } from '@/integrations/supabase/client';
 import { generateAlbumCode } from '@/utils/albumCode';
 import { useNavigate } from 'react-router-dom';
+import { logAlbumAccess } from '@/utils/deviceSecurity';
+import { getSecureDeviceId } from '@/utils/deviceSecurity';
 
 interface Album {
   id: string;
@@ -37,6 +37,7 @@ const Index = () => {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const deviceId = getSecureDeviceId();
 
   React.useEffect(() => {
     if (user && currentView === 'home') {
@@ -77,7 +78,7 @@ const Index = () => {
 
     setLoading(true);
     try {
-      const albumCode = generateAlbumCode();
+      const albumCode = await generateAlbumCode(); // Use secure generation
       
       const { data, error } = await supabase
         .from('albums')
@@ -88,7 +89,8 @@ const Index = () => {
           wedding_date: formData.weddingDate,
           description: formData.description,
           photo_limit: formData.photoLimit,
-          album_code: albumCode,
+          album_code: albumCode, // Keep old field for compatibility
+          new_album_code: albumCode, // Use new secure field
         })
         .select()
         .single();
@@ -102,6 +104,12 @@ const Index = () => {
         });
         return;
       }
+
+      // Log album creation
+      await logAlbumAccess(data.id, deviceId, 'created', {
+        brideName: formData.brideName,
+        groomName: formData.groomName
+      });
 
       setSelectedAlbum(data);
       setCurrentView('album');

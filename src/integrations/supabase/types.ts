@@ -9,6 +9,47 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      album_access_logs: {
+        Row: {
+          action: string
+          album_id: string
+          created_at: string
+          details: Json | null
+          device_id: string
+          id: string
+          ip_address: unknown | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          album_id: string
+          created_at?: string
+          details?: Json | null
+          device_id: string
+          id?: string
+          ip_address?: unknown | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          album_id?: string
+          created_at?: string
+          details?: Json | null
+          device_id?: string
+          id?: string
+          ip_address?: unknown | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "album_access_logs_album_id_fkey"
+            columns: ["album_id"]
+            isOneToOne: false
+            referencedRelation: "albums"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       albums: {
         Row: {
           album_code: string
@@ -18,6 +59,7 @@ export type Database = {
           groom_name: string
           id: string
           is_active: boolean
+          new_album_code: string | null
           photo_limit: number
           user_id: string
           wedding_date: string
@@ -30,6 +72,7 @@ export type Database = {
           groom_name: string
           id?: string
           is_active?: boolean
+          new_album_code?: string | null
           photo_limit?: number
           user_id: string
           wedding_date: string
@@ -42,6 +85,7 @@ export type Database = {
           groom_name?: string
           id?: string
           is_active?: boolean
+          new_album_code?: string | null
           photo_limit?: number
           user_id?: string
           wedding_date?: string
@@ -52,6 +96,53 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      device_sessions: {
+        Row: {
+          album_id: string
+          created_at: string
+          device_id: string
+          expires_at: string
+          id: string
+          ip_address: unknown | null
+          is_active: boolean
+          last_activity: string
+          session_token: string
+          user_agent: string | null
+        }
+        Insert: {
+          album_id: string
+          created_at?: string
+          device_id: string
+          expires_at?: string
+          id?: string
+          ip_address?: unknown | null
+          is_active?: boolean
+          last_activity?: string
+          session_token: string
+          user_agent?: string | null
+        }
+        Update: {
+          album_id?: string
+          created_at?: string
+          device_id?: string
+          expires_at?: string
+          id?: string
+          ip_address?: unknown | null
+          is_active?: boolean
+          last_activity?: string
+          session_token?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_sessions_album_id_fkey"
+            columns: ["album_id"]
+            isOneToOne: false
+            referencedRelation: "albums"
             referencedColumns: ["id"]
           },
         ]
@@ -124,6 +215,36 @@ export type Database = {
         }
         Relationships: []
       }
+      rate_limits: {
+        Row: {
+          action: string
+          attempt_count: number
+          blocked_until: string | null
+          created_at: string
+          id: string
+          identifier: string
+          window_start: string
+        }
+        Insert: {
+          action: string
+          attempt_count?: number
+          blocked_until?: string | null
+          created_at?: string
+          id?: string
+          identifier: string
+          window_start?: string
+        }
+        Update: {
+          action?: string
+          attempt_count?: number
+          blocked_until?: string | null
+          created_at?: string
+          id?: string
+          identifier?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       upload_limits: {
         Row: {
           album_id: string
@@ -161,6 +282,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_device_session: {
+        Args: {
+          p_device_id: string
+          p_album_id: string
+          p_ip_address?: unknown
+          p_user_agent?: string
+        }
+        Returns: string
+      }
+      generate_secure_album_code: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      validate_device_session: {
+        Args: {
+          p_session_token: string
+          p_device_id: string
+          p_album_id: string
+        }
+        Returns: boolean
+      }
       validate_media_upload: {
         Args: {
           file_size_bytes: number
@@ -168,6 +310,16 @@ export type Database = {
           file_extension: string
         }
         Returns: boolean
+      }
+      validate_media_upload_enhanced: {
+        Args: {
+          file_size_bytes: number
+          file_type: string
+          file_extension: string
+          device_id: string
+          album_id: string
+        }
+        Returns: Json
       }
     }
     Enums: {
