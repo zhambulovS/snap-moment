@@ -1,4 +1,6 @@
 
+import { supabase } from '@/integrations/supabase/client';
+
 // Utility for working with secure album codes
 export const generateSecureAlbumCode = async (): Promise<string> => {
   const { data, error } = await supabase.rpc('generate_secure_album_code');

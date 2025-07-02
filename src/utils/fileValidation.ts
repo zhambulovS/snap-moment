@@ -73,7 +73,7 @@ export const validateFileServer = async (
       };
     }
     
-    return data as FileValidationResult;
+    return data as unknown as FileValidationResult;
   } catch (error) {
     console.error('File validation error:', error);
     return {

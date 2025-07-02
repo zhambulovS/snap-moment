@@ -20,7 +20,7 @@ export const getSecureDeviceId = (): string => {
       screen.colorDepth,
       new Date().getTimezoneOffset(),
       navigator.hardwareConcurrency || 0,
-      navigator.deviceMemory || 0,
+      (navigator as any).deviceMemory || 0,
       canvasFingerprint,
       navigator.platform,
       Date.now() // Add timestamp for uniqueness
