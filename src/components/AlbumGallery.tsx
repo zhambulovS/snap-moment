@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Camera, Download, Heart, Users, Calendar, Eye, Settings, Images, QrCode, Trash2, Play, Volume2, VolumeX, Video } from 'lucide-react';
+import { Camera, Download, Heart, Users, Calendar, Eye, Settings, Images, QrCode, Trash2, Play, Volume2, VolumeX, Video, Share } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import AlbumSettings from './AlbumSettings';
+import ShareAlbumModal from './ShareAlbumModal';
 
 interface Album {
   id: string;
@@ -46,7 +47,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState<MediaFile | null>(null);
   const [activeTab, setActiveTab] = useState('gallery');
-  const [showQRCode, setShowQRCode] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
   const [videoMuted, setVideoMuted] = useState(false);
   const { toast } = useToast();
@@ -223,34 +224,6 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
     }
   }, [deletingFiles, uploadStats, album.id, loadUploadStats, toast]);
 
-  const copyAlbumLink = useCallback(() => {
-    const link = `${window.location.origin}/guest/${album.album_code}`;
-    navigator.clipboard.writeText(link);
-    toast({
-      title: "Ссылка скопирована!",
-      description: "Поделитесь этой ссылкой с гостями",
-    });
-  }, [album.album_code, toast]);
-
-  const generateQRCode = useCallback(() => {
-    const link = `${window.location.origin}/guest/${album.album_code}`;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(link)}`;
-  }, [album.album_code]);
-
-  const downloadQRCode = useCallback(() => {
-    const qrUrl = generateQRCode();
-    const link = document.createElement('a');
-    link.href = qrUrl;
-    link.download = `qr-${album.bride_name}-${album.groom_name}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    toast({
-      title: "QR-код загружен!",
-      description: "QR-код сохранен в загрузки",
-    });
-  }, [generateQRCode, album.bride_name, album.groom_name, toast]);
 
   if (loading) {
     return (
@@ -300,19 +273,11 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
               </div>
               <div className="flex space-x-2">
                 <Button
-                  onClick={() => setShowQRCode(true)}
-                  variant="outline"
-                  className="border-rose-300 text-rose-600 hover:bg-rose-50"
-                >
-                  <QrCode className="mr-2 h-4 w-4" />
-                  QR-код
-                </Button>
-                <Button
-                  onClick={copyAlbumLink}
+                  onClick={() => setShowShareModal(true)}
                   className="bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
                 >
-                  <Users className="mr-2 h-4 w-4" />
-                  Поделиться ссылкой
+                  <Share className="mr-2 h-4 w-4" />
+                  Поделиться альбомом
                 </Button>
               </div>
             </div>
@@ -344,11 +309,11 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
                     Поделитесь ссылкой с гостями, чтобы они могли загружать фото и видео
                   </p>
                   <Button
-                    onClick={copyAlbumLink}
+                    onClick={() => setShowShareModal(true)}
                     className="bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
                   >
-                    <Users className="mr-2 h-4 w-4" />
-                    Поделиться ссылкой
+                    <Share className="mr-2 h-4 w-4" />
+                    Поделиться альбомом
                   </Button>
                 </CardContent>
               </Card>
@@ -478,48 +443,12 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
           </TabsContent>
         </Tabs>
 
-        {/* QR Code Modal */}
-        {showQRCode && (
-          <div 
-            className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowQRCode(false)}
-          >
-            <div className="bg-white rounded-lg p-8 max-w-md w-full text-center" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-2xl font-bold text-gray-800 mb-4">QR-код для гостей</h3>
-              <div className="mb-4">
-                <img
-                  src={generateQRCode()}
-                  alt="QR Code"
-                  className="mx-auto rounded-lg shadow-lg"
-                />
-              </div>
-              <div className="mb-6">
-                <p className="text-lg font-semibold text-rose-600 mb-2">
-                  {album.bride_name} & {album.groom_name}
-                </p>
-                <p className="text-sm text-gray-600">
-                  Отсканируйте QR-код для загрузки фото и видео
-                </p>
-              </div>
-              <div className="flex space-x-2">
-                <Button
-                  onClick={downloadQRCode}
-                  className="flex-1 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Скачать
-                </Button>
-                <Button
-                  onClick={() => setShowQRCode(false)}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Закрыть
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Share Modal */}
+        <ShareAlbumModal
+          album={album}
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+        />
 
         {/* Media Modal */}
         {selectedMedia && (

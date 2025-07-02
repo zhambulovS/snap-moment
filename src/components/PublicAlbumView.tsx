@@ -6,6 +6,7 @@ import { Camera, Heart, Calendar, Upload, Play, Pause, Volume2, VolumeX } from '
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useParams } from 'react-router-dom';
+import { CookieCache } from '@/utils/cookieCache';
 
 interface Album {
   id: string;
@@ -44,24 +45,57 @@ const PublicAlbumView = () => {
     if (!albumCode) return;
 
     try {
+      // Проверяем кеш сначала
+      const cachedAlbum = CookieCache.getAlbum(albumCode);
+      const cachedMedia = CookieCache.getMediaFiles(albumCode);
+
+      if (cachedAlbum && cachedMedia) {
+        console.log('Loading album and media from cache');
+        setAlbum(cachedAlbum);
+        setMediaFiles(cachedMedia);
+        setLoading(false);
+        
+        // Загружаем обновления в фоне
+        loadAlbumFromServer(albumCode, false);
+        return;
+      }
+
+      // Если кеша нет, загружаем с сервера
+      await loadAlbumFromServer(albumCode, true);
+    } catch (error) {
+      console.error('Error in loadAlbum:', error);
+      setLoading(false);
+    }
+  }, [albumCode]);
+
+  const loadAlbumFromServer = async (code: string, showLoading: boolean) => {
+    try {
+      if (showLoading) {
+        setLoading(true);
+      }
+
       const { data: albumData, error: albumError } = await supabase
         .from('albums')
         .select('*')
-        .eq('album_code', albumCode)
+        .eq('album_code', code)
         .eq('is_active', true)
         .single();
 
       if (albumError) {
         console.error('Error loading album:', albumError);
-        toast({
-          title: "Альбом не найден",
-          description: "Проверьте правильность ссылки",
-          variant: "destructive"
-        });
+        if (showLoading) {
+          toast({
+            title: "Альбом не найден",
+            description: "Проверьте правильность ссылки",
+            variant: "destructive"
+          });
+        }
         setLoading(false);
         return;
       }
 
+      // Кешируем альбом
+      CookieCache.setAlbum(code, albumData);
       setAlbum(albumData);
 
       // Load media files
@@ -73,11 +107,13 @@ const PublicAlbumView = () => {
 
       if (mediaError) {
         console.error('Error loading media:', mediaError);
-        toast({
-          title: "Ошибка",
-          description: "Не удалось загрузить медиафайлы",
-          variant: "destructive"
-        });
+        if (showLoading) {
+          toast({
+            title: "Ошибка",
+            description: "Не удалось загрузить медиафайлы",
+            variant: "destructive"
+          });
+        }
         setLoading(false);
         return;
       }
@@ -100,13 +136,15 @@ const PublicAlbumView = () => {
         })
       );
 
+      // Кешируем медиафайлы
+      CookieCache.setMediaFiles(code, mediaWithUrls);
       setMediaFiles(mediaWithUrls);
       setLoading(false);
     } catch (error) {
-      console.error('Error in loadAlbum:', error);
+      console.error('Error in loadAlbumFromServer:', error);
       setLoading(false);
     }
-  }, [albumCode, toast]);
+  };
 
   useEffect(() => {
     loadAlbum();
