@@ -155,16 +155,28 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
     setDeletingFiles(prev => new Set(prev).add(media.id));
     
     try {
-      console.log('Starting deletion process for media:', media.id, media.file_name);
+      console.log('Starting deletion process for media:', media.id, media.file_name, 'storage_path:', media.storage_path);
       
-      // First, try to delete from storage
-      const { error: storageError } = await supabase.storage
-        .from('wedding-media')
-        .remove([media.storage_path || media.file_name]);
+      // Determine the correct storage path to delete
+      const storagePathToDelete = media.storage_path || media.file_name;
+      
+      // Try to delete from both storage buckets (old and new) to ensure cleanup
+      const buckets = ['wedding-media', 'wedding-photos'];
+      
+      for (const bucket of buckets) {
+        try {
+          const { error: storageError } = await supabase.storage
+            .from(bucket)
+            .remove([storagePathToDelete]);
 
-      if (storageError) {
-        console.error('Storage deletion error:', storageError);
-        // Continue with database deletion even if storage fails
+          if (storageError) {
+            console.log(`Storage deletion from ${bucket} failed:`, storageError.message);
+          } else {
+            console.log(`Successfully deleted from ${bucket}`);
+          }
+        } catch (err) {
+          console.log(`Error deleting from ${bucket}:`, err);
+        }
       }
 
       // Delete from database
@@ -196,7 +208,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
         }
       }
 
-      // Update UI immediately
+      // Update UI immediately - remove the deleted media from the list
       setMediaFiles(prev => prev.filter(m => m.id !== media.id));
       setSelectedMedia(null);
       
@@ -205,7 +217,7 @@ const AlbumGallery = ({ album: initialAlbum, onBack, onUpdate, onDelete }: Album
       
       toast({
         title: "Файл удален",
-        description: "Медиафайл успешно удален",
+        description: "Медиафайл успешно удален из альбома",
       });
       
     } catch (error) {

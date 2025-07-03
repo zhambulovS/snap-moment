@@ -25,9 +25,21 @@ const AuthPage = () => {
       if (isLogin) {
         const { error } = await signIn(email, password);
         if (error) {
+          console.error('Login error:', error);
+          let errorMessage = error.message;
+          
+          // Handle common auth errors with user-friendly messages
+          if (error.message.includes('Invalid login credentials')) {
+            errorMessage = 'Неверный email или пароль';
+          } else if (error.message.includes('Email not confirmed')) {
+            errorMessage = 'Подтвердите email перед входом';
+          } else if (error.message.includes('Too many requests')) {
+            errorMessage = 'Слишком много попыток. Попробуйте позже';
+          }
+          
           toast({
             title: "Ошибка входа",
-            description: error.message,
+            description: errorMessage,
             variant: "destructive"
           });
         } else {
@@ -35,13 +47,28 @@ const AuthPage = () => {
             title: "Добро пожаловать!",
             description: "Вы успешно вошли в систему"
           });
+          // Clear form
+          setEmail('');
+          setPassword('');
         }
       } else {
         const { error } = await signUp(email, password, fullName);
         if (error) {
+          console.error('Signup error:', error);
+          let errorMessage = error.message;
+          
+          // Handle common signup errors
+          if (error.message.includes('User already registered')) {
+            errorMessage = 'Пользователь с таким email уже существует';
+          } else if (error.message.includes('Password should be at least 6 characters')) {
+            errorMessage = 'Пароль должен содержать минимум 6 символов';
+          } else if (error.message.includes('Unable to validate email address')) {
+            errorMessage = 'Некорректный email адрес';
+          }
+          
           toast({
             title: "Ошибка регистрации",
-            description: error.message,
+            description: errorMessage,
             variant: "destructive"
           });
         } else {
@@ -49,6 +76,11 @@ const AuthPage = () => {
             title: "Регистрация успешна!",
             description: "Проверьте почту для подтверждения аккаунта"
           });
+          // Clear form and switch to login
+          setEmail('');
+          setPassword('');
+          setFullName('');
+          setIsLogin(true);
         }
       }
     } catch (error) {
