@@ -7,6 +7,7 @@ import { Camera, Upload, Heart, AlertCircle, CheckCircle, ArrowLeft, Users } fro
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceId } from '@/utils/deviceId';
+import { generateUniqueFileName, validateFileUpload } from '@/utils/fileUtils';
 
 interface Album {
   id: string;
@@ -122,21 +123,21 @@ const GuestPhotoUpload = () => {
       let successCount = 0;
       
       for (const file of filesToUpload) {
-        console.log('Uploading file:', file.name, 'Size:', file.size, 'Session:', deviceSession);
+        console.log('Uploading file:', file.name, 'Size:', file.size);
         
-        // Проверяем размер файла (максимум 10MB)
-        if (file.size > 10 * 1024 * 1024) {
+        // Validate file before upload
+        const validation = validateFileUpload(file);
+        if (!validation.valid) {
           toast({
-            title: "Файл слишком большой",
-            description: `${file.name} превышает 10MB`,
+            title: "Некорректный файл",
+            description: validation.error || `Ошибка валидации файла ${file.name}`,
             variant: "destructive"
           });
           continue;
         }
 
-        // Создаем уникальное имя файла с информацией о сессии
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${album.id}/${deviceId}/${deviceSession}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        // Generate safe file name
+        const fileName = generateUniqueFileName(file.name, album.id);
 
         console.log('Uploading to storage with filename:', fileName);
 
@@ -162,9 +163,11 @@ const GuestPhotoUpload = () => {
           .from('photos')
           .insert({
             album_id: album.id,
-            file_name: fileName,
+            file_name: file.name, // Original file name for display
             file_size: file.size,
-            device_id: deviceId
+            file_type: file.type.startsWith('video/') ? 'video' : 'image',
+            device_id: deviceId,
+            storage_path: fileName // Safe storage path
           });
 
         if (dbError) {

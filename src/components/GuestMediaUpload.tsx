@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useParams } from 'react-router-dom';
 import { getSecureDeviceId, DeviceSessionManager, RateLimiter, logAlbumAccess } from '@/utils/deviceSecurity';
 import { validateFile } from '@/utils/fileValidation';
+import { generateUniqueFileName, validateFileUpload } from '@/utils/fileUtils';
 
 interface Album {
   id: string;
@@ -141,7 +142,18 @@ const GuestMediaUpload = () => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // Enhanced file validation
+      // Basic client-side validation first
+      const basicValidation = validateFileUpload(file);
+      if (!basicValidation.valid) {
+        toast({
+          title: "Ошибка валидации файла",
+          description: basicValidation.error || "Некорректный файл",
+          variant: "destructive"
+        });
+        continue;
+      }
+      
+      // Enhanced server-side validation
       const validation = await validateFile(file, deviceId, album.id);
       if (!validation.valid) {
         toast({
@@ -193,7 +205,8 @@ const GuestMediaUpload = () => {
       return;
     }
 
-    const fileName = `${album.id}/${Date.now()}-${uploadFile.file.name}`;
+    // Generate safe file name
+    const fileName = generateUniqueFileName(uploadFile.file.name, album.id);
     
     try {
       setUploadFiles(prev => prev.map(f => 
@@ -219,11 +232,11 @@ const GuestMediaUpload = () => {
         .from('photos')
         .insert({
           album_id: album.id,
-          file_name: uploadFile.file.name,
+          file_name: uploadFile.file.name, // Original file name for display
           file_size: uploadFile.file.size,
           file_type: uploadFile.type,
           device_id: deviceId,
-          storage_path: fileName
+          storage_path: fileName // Safe storage path for actual file location
         });
 
       if (dbError) {

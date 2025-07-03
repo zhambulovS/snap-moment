@@ -14,7 +14,7 @@ import GuestMediaUpload from "./components/GuestMediaUpload";
 const queryClient = new QueryClient();
 
 const App = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, session } = useAuth();
 
   if (loading) {
     return (
@@ -26,6 +26,8 @@ const App = () => {
       </div>
     );
   }
+
+  console.log('App render - User:', user?.id, 'Session:', !!session);
 
   return (
     <QueryClientProvider client={queryClient}>
